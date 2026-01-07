@@ -176,8 +176,19 @@ def update_student(student_db_id):
         if not student:
             return jsonify({'success': False, 'error': 'Student not found'}), 404
 
-        if 'student_id' in data:
+        # If updating student_id, check for uniqueness
+        if 'student_id' in data and data['student_id'] != student.student_id:
+            # Check if new student_id already exists
+            existing = db.query(Student).filter(
+                Student.student_id == data['student_id'],
+                Student.id != student_db_id
+            ).first()
+            
+            if existing:
+                return jsonify({'success': False, 'error': f'Student ID "{data["student_id"]}" already exists'}), 400
+            
             student.student_id = data['student_id']
+            
         if 'name' in data:
             student.name = data['name']
         if 'email' in data:
@@ -190,6 +201,8 @@ def update_student(student_db_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/students/<int:student_db_id>', methods=['DELETE'])
 def delete_student(student_db_id):
