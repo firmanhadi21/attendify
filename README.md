@@ -601,7 +601,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 For issues, questions, or contributions:
 - **GitHub Issues**: [Create an issue](https://github.com/firmanhadi21/attendify/issues)
-- **Email**: firmanhadi21@example.com
+- **Email**: firmanhadi21@lecturer.undip.ac.id
 
 ## Acknowledgments
 
