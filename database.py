@@ -144,7 +144,14 @@ class Admin(Base):
         }
 
 # Database setup
-engine = create_engine(Config.SQLALCHEMY_DATABASE_URI, echo=Config.DEBUG)
+engine = create_engine(
+    Config.SQLALCHEMY_DATABASE_URI, 
+    echo=Config.DEBUG,
+    pool_size=20,
+    max_overflow=40,
+    pool_recycle=3600,
+    pool_pre_ping=True
+)
 SessionLocal = sessionmaker(bind=engine)
 
 def init_db():

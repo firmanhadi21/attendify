@@ -10,6 +10,7 @@ import numpy as np
 from sqlalchemy import func, or_
 import pandas as pd
 from werkzeug.utils import secure_filename
+from functools import wraps
 
 from config import Config
 from database import init_db, get_db, Student, Attendance, Course, CourseEnrollment
@@ -23,6 +24,18 @@ CORS(app)
 # Initialize face detection and recognition
 face_detector = FaceDetector()
 face_recognizer = FaceRecognizer()
+
+# Database session management decorator
+def with_db_session(f):
+    """Decorator to ensure database session is properly closed"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        db = next(get_db())
+        try:
+            return f(db, *args, **kwargs)
+        finally:
+            db.close()
+    return decorated_function
 
 # Global variable for video stream - for Mark Attendance tab
 cameras = {}  # Dictionary to store multiple camera instances
@@ -727,14 +740,16 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
     """Get all courses"""
+    db = next(get_db())
     try:
-        db = next(get_db())
         courses = db.query(Course).filter(Course.is_active == True).all()
         print(f"Found {len(courses)} courses")
         return jsonify([course.to_dict() for course in courses])
     except Exception as e:
         print(f"Error getting courses: {e}")
         return jsonify([]), 200  # Return empty array instead of error
+    finally:
+        db.close()
 
 @app.route('/api/courses', methods=['POST'])
 def create_course():
@@ -766,6 +781,8 @@ def create_course():
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/courses/<int:course_id>', methods=['PUT'])
 def update_course(course_id):
@@ -801,6 +818,8 @@ def update_course(course_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/courses/<int:course_id>', methods=['DELETE'])
 def delete_course(course_id):
