@@ -459,6 +459,7 @@ document.getElementById('manual-start-camera')?.addEventListener('click', startE
 
 // Camera and Course Session selection for Mark Attendance tab
 let currentCamera = 1; // Default to Mac built-in camera
+let currentWeekNumber = null; // Current week number
 
 // Load courses for attendance session
 async function loadCoursesForAttendance() {
@@ -517,6 +518,7 @@ async function loadCoursesForAttendance() {
 document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
     const selectedCamera = document.getElementById('camera-select').value;
     const selectedCourse = document.getElementById('course-session-select').value;
+    const selectedWeek = document.getElementById('week-select').value;
     const courseSelect = document.getElementById('course-session-select');
     const selectedOption = courseSelect.options[courseSelect.selectedIndex];
 
@@ -525,17 +527,24 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
         return;
     }
 
+    if (!selectedWeek) {
+        showResult('attendance-result', 'Please select a week!', 'error');
+        return;
+    }
+
     currentCamera = selectedCamera;
     currentCourseId = selectedCourse;
     currentCourseName = selectedOption.dataset.courseName;
+    currentWeekNumber = parseInt(selectedWeek);
 
-    // Update video feed URL with camera and course parameters
+    // Update video feed URL with camera, course, and week parameters
     const videoFeed = document.getElementById('video-feed');
     const timestamp = new Date().getTime();
-    videoFeed.src = `/api/video_feed?camera=${selectedCamera}&course_id=${selectedCourse}&t=${timestamp}`;
+    videoFeed.src = `/api/video_feed?camera=${selectedCamera}&course_id=${selectedCourse}&week=${selectedWeek}&t=${timestamp}`;
 
     // Show session info
     document.getElementById('active-course-name').textContent = currentCourseName;
+    document.getElementById('active-week').textContent = `Week ${selectedWeek}`;
     const cameraName = 'Built-in Camera (FaceTime HD)';
     document.getElementById('active-camera-name').textContent = cameraName;
     document.getElementById('session-info').style.display = 'block';

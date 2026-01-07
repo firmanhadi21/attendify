@@ -523,7 +523,7 @@ def mark_attendance():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
-def generate_frames(camera_index=None, course_id=None):
+def generate_frames(camera_index=None, course_id=None, week_number=None):
     """Generate video frames for live stream with automatic face detection"""
     global last_detected_students
     cam = get_camera(camera_index)
@@ -626,7 +626,8 @@ def generate_frames(camera_index=None, course_id=None):
                                     student_id=student.id,
                                     course_id=active_course.id,
                                     confidence=f"{confidence:.2%}",
-                                    image_path=str(temp_path)
+                                    image_path=str(temp_path),
+                                    week_number=week_number
                                 )
                                 db.add(attendance)
                                 db.commit()
@@ -931,7 +932,8 @@ def video_feed():
     """Video streaming route with automatic attendance marking"""
     camera_index = request.args.get('camera', default=Config.CAMERA_INDEX, type=int)
     course_id = request.args.get('course_id', default=None, type=int)
-    return Response(generate_frames(camera_index, course_id),
+    week_number = request.args.get('week', default=None, type=int)
+    return Response(generate_frames(camera_index, course_id, week_number),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':

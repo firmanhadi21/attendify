@@ -44,6 +44,7 @@ class Attendance(Base):
     confidence = Column(String(10))  # Recognition confidence score
     image_path = Column(String(255))  # Path to captured image
     status = Column(String(20), default='present')  # present, late, etc.
+    week_number = Column(Integer, nullable=True)  # Week 1-14
 
     # Relationships
     student = relationship('Student', back_populates='attendance_records')
@@ -58,7 +59,8 @@ class Attendance(Base):
             'course_name': self.course.course_name if self.course else None,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'confidence': self.confidence,
-            'status': self.status
+            'status': self.status,
+            'week_number': self.week_number
         }
 
 class Course(Base):
