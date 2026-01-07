@@ -220,6 +220,8 @@ def delete_student(student_db_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/students/bulk-import', methods=['POST'])
 def bulk_import_students():
@@ -843,19 +845,23 @@ def delete_course(course_id):
 def get_enrollments():
     """Get all course enrollments"""
     db = next(get_db())
-    course_id = request.args.get('course_id')
-    student_id = request.args.get('student_id')
+    try:
+        course_id = request.args.get('course_id')
+        student_id = request.args.get('student_id')
 
-    query = db.query(CourseEnrollment)
+        # Join with Student table to filter out deleted students
+        query = db.query(CourseEnrollment).join(Student).filter(Student.is_active == True)
 
-    if course_id:
-        query = query.filter(CourseEnrollment.course_id == course_id)
-    if student_id:
-        # student_id here is the internal database ID, not student_id string
-        query = query.filter(CourseEnrollment.student_id == student_id)
+        if course_id:
+            query = query.filter(CourseEnrollment.course_id == course_id)
+        if student_id:
+            # student_id here is the internal database ID, not student_id string
+            query = query.filter(CourseEnrollment.student_id == student_id)
 
-    enrollments = query.all()
-    return jsonify([enrollment.to_dict() for enrollment in enrollments])
+        enrollments = query.all()
+        return jsonify([enrollment.to_dict() for enrollment in enrollments])
+    finally:
+        db.close()
 
 @app.route('/api/enrollments', methods=['POST'])
 def create_enrollment():
