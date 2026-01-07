@@ -40,12 +40,14 @@ A web-based attendance system that uses YOLO for face detection and DeepFace for
 
 - **Multiple Face Detection**: Detects and recognizes multiple students simultaneously in a single frame
 - **CCTV/IP Camera Support**: Works with RTSP, HTTP streams, and USB webcams
+- **Bulk Student Import**: Import hundreds of students from Excel spreadsheet
+- **Database Lookup Enrollment**: Select students from database instead of manual entry
 - **Face Detection**: Uses YOLOv8 for fast and accurate face detection
 - **Face Recognition**: Leverages DeepFace with Facenet512 for reliable face identification
-- **Smart Student Enrollment**: Streamlined one-step enrollment with webcam or photo upload
+- **Smart Student Enrollment**: Streamlined enrollment with database lookup or manual entry
 - **Course Schedule Management**: Create and manage courses with specific time slots and days
 - **Schedule-Based Attendance**: Automatic attendance tracking based on active course sessions
-- **Enrollment Management**: Enroll students in specific courses
+- **Enrollment Management**: Enroll students in specific courses with bulk operations
 - **Real-time Attendance**: Live camera feed for instant attendance marking
 - **Batch Attendance Marking**: Mark attendance for entire class with one capture
 - **Admin Module**: Complete administrative interface with secure login
@@ -197,31 +199,89 @@ http://localhost:5001
 - Find the course in the list
 - Click "Edit" to modify or "Delete" to remove
 
-### Student Enrollment
+### Bulk Student Import (Admin)
 
-**Method 1: Using Webcam**
-1. Go to "Enroll Student" tab
-2. Enter Student ID (e.g., "STU001")
-3. Enter Full Name (e.g., "John Doe")
-4. Click "Use Webcam"
-5. Allow camera access when prompted
-6. Position face in camera view
-7. Click "Capture Photo"
-8. Review the photo
-9. Click "Enroll Student" (or "Retake" if photo is not clear)
+**Importing Students from Excel:**
+1. Go to Admin → Import Students
+2. Prepare your Excel file with required columns:
+   - **Student ID** (required) - e.g., "STU001", "202301001"
+   - **Full Name** (required) - e.g., "John Doe"
+   - **Email** (optional) - e.g., "john.doe@university.edu"
+   - **Phone** (optional) - e.g., "+1234567890"
+3. Click "Choose File" and select your Excel (.xlsx or .xls)
+4. Click "Import Students"
+5. System will:
+   - Validate data format
+   - Check for duplicate Student IDs
+   - Create student records in database
+   - Show import summary (X students imported, Y errors)
 
-**Method 2: Upload Photo**
+**Excel Template Format:**
+```
+| Student ID | Full Name      | Email                    | Phone        |
+|------------|----------------|--------------------------|--------------|
+| STU001     | John Doe       | john@university.edu      | +1234567890  |
+| STU002     | Jane Smith     | jane@university.edu      | +1234567891  |
+| STU003     | Mike Johnson   | mike@university.edu      | +1234567892  |
+```
+
+**Download Template:**
+- Click "Download Excel Template" button in the Import Students page
+- Fill in your student data
+- Import the completed file
+
+**Benefits:**
+- ✅ Bulk import hundreds of students at once
+- ✅ Reduce manual data entry errors
+- ✅ Integrate with existing student information systems
+- ✅ Update student information via re-import
+
+### Student Face Enrollment
+
+After importing student records, enroll their face photos for recognition:
+
+**Method 1: Lookup from Database (Recommended)**
 1. Go to "Enroll Student" tab
-2. Enter Student ID and Full Name
-3. Click "Upload Photo"
-4. Select a clear photo file
+2. Click "Select from Database" button
+3. Choose filter option:
+   - **By Course**: Select a course to see all enrolled students
+   - **Search**: Type student name or ID to search
+   - **All Students**: View all students without face photos
+4. Select student from the list
+   - Shows: Student ID, Full Name, Course(s)
+   - Status indicator: ✅ Face enrolled or ❌ No photo
+5. Click "Select" to load student details automatically
+6. Capture or upload face photo
+7. Click "Enroll Face"
+
+**Method 2: Manual Entry (Legacy)**
+1. Go to "Enroll Student" tab
+2. Manually enter Student ID (e.g., "STU001")
+3. Manually enter Full Name (e.g., "John Doe")
+4. Capture or upload face photo
 5. Click "Enroll Student"
+
+**Capturing Face Photo:**
+
+**Option A: Using Webcam**
+1. Click "Use Webcam"
+2. Allow camera access when prompted
+3. Position face in camera view
+4. Click "Capture Photo"
+5. Review the photo
+6. Click "Enroll Face" (or "Retake" if photo is not clear)
+
+**Option B: Upload Photo**
+1. Click "Upload Photo"
+2. Select a clear photo file
+3. Click "Enroll Face"
 
 **Tips for best results:**
 - Use clear, well-lit photos
 - Face should be front-facing
 - No sunglasses or face coverings
 - High resolution recommended
+- Enroll multiple photos per student for better accuracy (if system supports)
 
 ### Camera Setup for Multiple Face Detection
 
@@ -483,8 +543,13 @@ attendify/
 
 ### Students
 - `GET /api/students` - Get all students
+- `GET /api/students?course_id=<id>` - Get students enrolled in specific course
+- `GET /api/students?no_photo=true` - Get students without face photos
+- `GET /api/students/search?q=<query>` - Search students by name or ID
 - `POST /api/students` - Create new student
+- `POST /api/students/bulk-import` - Bulk import students from Excel file (admin only)
 - `POST /api/students/<id>/enroll` - Enroll student face with image
+- `GET /api/students/export-template` - Download Excel template for bulk import
 
 ### Attendance
 - `GET /api/attendance` - Get attendance records (with optional date filter)
@@ -499,7 +564,9 @@ attendify/
 
 ### Enrollments
 - `GET /api/enrollments` - Get all course enrollments
+- `GET /api/enrollments?student_id=<id>` - Get courses for specific student
 - `POST /api/enrollments` - Enroll student in course (admin only)
+- `DELETE /api/enrollments/<id>` - Remove enrollment (admin only)
 - `DELETE /api/enrollments/<id>` - Remove enrollment (admin only)
 
 ### Admin
@@ -579,6 +646,9 @@ python list_cameras.py
 # Check attendance for today
 python check_attendance.py
 
+# Install Excel import dependencies
+pip install openpyxl pandas
+
 # Test RTSP stream with VLC (macOS)
 vlc rtsp://username:password@192.168.1.100:554/stream1
 
@@ -589,6 +659,18 @@ ping 192.168.1.100
 ### Default Credentials
 - **Admin Username**: `admin`
 - **Admin Password**: `admin123` (change immediately!)
+
+### Default URLs
+- **Application**: http://localhost:5001
+- **Video Feed**: http://localhost:5001/api/video_feed
+- **Excel Template**: http://localhost:5001/api/students/export-template
+
+### Excel Import Format
+Your Excel file should have these columns (first two are required):
+- **Student ID** (required) - Unique identifier
+- **Full Name** (required) - Student's full name
+- **Email** (optional) - Contact email
+- **Phone** (optional) - Contact number
 
 ### Default URLs
 - **Application**: http://localhost:5001
@@ -793,6 +875,9 @@ For detailed schema information, see [database.py](database.py).
 ✅ Live course detection based on time/day  
 ✅ CCTV/IP camera livestream support (RTSP, HTTP, RTMP)  
 ✅ Multiple camera source support  
+✅ Bulk student import from Excel  
+✅ Student lookup and selection from database  
+✅ Course-based student filtering  
 
 ## Typical Workflow
 
@@ -801,10 +886,36 @@ For detailed schema information, see [database.py](database.py).
 2. Initialize database with `python init_admin.py`
 3. Login as admin and change default password
 4. Create courses with schedules
-5. **Optional**: Configure CCTV/IP camera stream in [config.py](config.py)
+5. **Import students in bulk**:
+   - Download Excel template from Admin → Import Students
+   - Fill in student data (ID, Name, Email, Phone)
+   - Upload and import the file
+6. **Enroll students in courses**:
+   - Go to Admin → Enrollments
+   - Select student and course
+   - Click "Enroll"
+7. **Enroll student faces**:
+   - Go to "Enroll Student" tab
+   - Click "Select from Database"
+   - Filter by course or search by name
+   - Select student and capture/upload face photo
+   - Repeat for all students
+8. **Optional**: Configure CCTV/IP camera stream in [config.py](config.py)
+
+### Semester/Term Setup (for new academic period)
+1. **Import new student batch**:
+   - Prepare Excel with new students
+   - Import via Admin → Import Students
+   - System validates and creates records
+2. **Create new courses** or update existing course schedules
+3. **Enroll students in courses** using Admin panel
+4. **Enroll student faces** using lookup feature:
+   - Select from database by course
+   - Batch process entire course enrollment
+   - Track progress with status indicators
 
 ### Daily Operation (with CCTV Camera)
-1. **Before class**: Admin enrolls students in courses (if not already done)
+1. **Before class**: Verify students are enrolled in active course
 2. **During class**: 
    - System automatically connects to CCTV livestream
    - System automatically detects active courses based on schedule
@@ -816,7 +927,11 @@ For detailed schema information, see [database.py](database.py).
 3. **After class**: View attendance reports and export if needed
 
 **Example - Marking 30 Students Using Classroom CCTV:**
-1. **One-time setup**: Configure CCTV stream URL in config.py
+1. **One-time setup**: 
+   - Import 30 students from Excel (30 seconds)
+   - Enroll them in course GIS101 (2 minutes)
+   - Capture face photos using lookup (10 minutes for 30 students)
+   - Configure CCTV stream URL in config.py
 2. **Daily operation**:
    - Open attendance system - automatically connects to CCTV
    - All 30 students visible in CCTV feed
@@ -826,9 +941,11 @@ For detailed schema information, see [database.py](database.py).
 3. **No daily setup needed** - permanent camera installation!
 
 ### Student Management
-1. Enroll new students with face photos
-2. Enroll students in relevant courses
-3. Update course enrollments as needed
+1. **Bulk Import**: Import students from Excel spreadsheet
+2. **Individual Add**: Manually add students via form (if needed)
+3. **Face Enrollment**: Use database lookup to select and enroll faces
+4. **Course Enrollment**: Assign students to courses via Admin panel
+5. **Updates**: Re-import Excel to update student information
 
 ## How It Works
 
@@ -867,6 +984,251 @@ For detailed schema information, see [database.py](database.py).
 - **Recognition**: Moderate - sequential processing of each face
 - **Scalability**: Tested with up to 30+ faces per frame
 - **Accuracy**: 95%+ recognition rate with good lighting and positioning
+
+## Implementation Guide for New Features
+
+### Bulk Student Import from Excel
+
+**Required Python libraries:**
+```bash
+pip install openpyxl pandas
+```
+
+**Backend implementation (app.py):**
+```python
+import pandas as pd
+from werkzeug.utils import secure_filename
+
+@app.route('/api/students/bulk-import', methods=['POST'])
+def bulk_import_students():
+    """Bulk import students from Excel file"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'error': 'Invalid file format'}), 400
+    
+    try:
+        # Read Excel file
+        df = pd.read_excel(file)
+        
+        # Validate required columns
+        required_cols = ['Student ID', 'Full Name']
+        if not all(col in df.columns for col in required_cols):
+            return jsonify({'success': False, 'error': 'Missing required columns'}), 400
+        
+        db = next(get_db())
+        imported = 0
+        errors = []
+        
+        for index, row in df.iterrows():
+            try:
+                # Check if student already exists
+                existing = db.query(Student).filter(
+                    Student.student_id == str(row['Student ID'])
+                ).first()
+                
+                if existing:
+                    errors.append(f"Row {index + 2}: Student ID {row['Student ID']} already exists")
+                    continue
+                
+                # Create new student
+                student = Student(
+                    student_id=str(row['Student ID']),
+                    name=str(row['Full Name']),
+                    email=str(row.get('Email', '')),
+                    phone=str(row.get('Phone', ''))
+                )
+                db.add(student)
+                imported += 1
+                
+            except Exception as e:
+                errors.append(f"Row {index + 2}: {str(e)}")
+        
+        db.commit()
+        
+        return jsonify({
+            'success': True,
+            'imported': imported,
+            'errors': errors
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/students/export-template', methods=['GET'])
+def export_template():
+    """Download Excel template for bulk import"""
+    df = pd.DataFrame(columns=['Student ID', 'Full Name', 'Email', 'Phone'])
+    
+    # Add sample data
+    df.loc[0] = ['STU001', 'John Doe', 'john@university.edu', '+1234567890']
+    df.loc[1] = ['STU002', 'Jane Smith', 'jane@university.edu', '+1234567891']
+    
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='student_import_template.xlsx'
+    )
+```
+
+**Frontend implementation (JavaScript):**
+```javascript
+// Upload Excel file for bulk import
+async function importStudentsFromExcel(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch('/api/students/bulk-import', {
+        method: 'POST',
+        body: formData
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+        alert(`Successfully imported ${result.imported} students!`);
+        if (result.errors.length > 0) {
+            console.log('Errors:', result.errors);
+        }
+    } else {
+        alert('Import failed: ' + result.error);
+    }
+}
+
+// Download Excel template
+function downloadTemplate() {
+    window.location.href = '/api/students/export-template';
+}
+```
+
+### Database Lookup for Student Enrollment
+
+**Backend API endpoints:**
+```python
+@app.route('/api/students/search', methods=['GET'])
+def search_students():
+    """Search students by name or ID"""
+    query = request.args.get('q', '')
+    course_id = request.args.get('course_id')
+    no_photo = request.args.get('no_photo') == 'true'
+    
+    db = next(get_db())
+    students_query = db.query(Student)
+    
+    # Filter by search query
+    if query:
+        students_query = students_query.filter(
+            (Student.name.ilike(f'%{query}%')) |
+            (Student.student_id.ilike(f'%{query}%'))
+        )
+    
+    # Filter by course enrollment
+    if course_id:
+        students_query = students_query.join(Enrollment).filter(
+            Enrollment.course_id == course_id
+        )
+    
+    # Filter students without face photos
+    if no_photo:
+        students_query = students_query.filter(Student.face_image_path == None)
+    
+    students = students_query.all()
+    
+    return jsonify({
+        'success': True,
+        'students': [{
+            'id': s.id,
+            'student_id': s.student_id,
+            'name': s.name,
+            'email': s.email,
+            'has_photo': s.face_image_path is not None,
+            'courses': [e.course.name for e in s.enrollments]
+        } for s in students]
+    })
+```
+
+**Frontend - Student lookup UI:**
+```javascript
+async function showStudentLookup() {
+    // Show modal with search/filter options
+    const modal = document.getElementById('studentLookupModal');
+    modal.style.display = 'block';
+    
+    // Load courses for filtering
+    await loadCoursesFilter();
+}
+
+async function searchStudents(query, courseId = null, noPhoto = false) {
+    let url = `/api/students/search?q=${encodeURIComponent(query)}`;
+    if (courseId) url += `&course_id=${courseId}`;
+    if (noPhoto) url += '&no_photo=true';
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    // Display results in table
+    displayStudentResults(data.students);
+}
+
+function selectStudent(student) {
+    // Auto-fill the enrollment form
+    document.getElementById('studentId').value = student.student_id;
+    document.getElementById('studentName').value = student.name;
+    
+    // Close lookup modal
+    document.getElementById('studentLookupModal').style.display = 'none';
+    
+    // Show photo capture section
+    document.getElementById('photoCaptureSection').style.display = 'block';
+}
+```
+
+**HTML Structure:**
+```html
+<!-- Student Lookup Modal -->
+<div id="studentLookupModal" class="modal">
+    <div class="modal-content">
+        <h2>Select Student from Database</h2>
+        
+        <!-- Search Box -->
+        <input type="text" id="studentSearch" placeholder="Search by name or ID...">
+        
+        <!-- Filter Options -->
+        <select id="courseFilter">
+            <option value="">All Courses</option>
+            <!-- Populated dynamically -->
+        </select>
+        
+        <label>
+            <input type="checkbox" id="noPhotoFilter">
+            Show only students without face photos
+        </label>
+        
+        <!-- Results Table -->
+        <table id="studentResults">
+            <thead>
+                <tr>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>Courses</th>
+                    <th>Photo Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Populated dynamically -->
+            </tbody>
+        </table>
+    </div>
+</div>
+```
 
 ## Future Enhancements
 

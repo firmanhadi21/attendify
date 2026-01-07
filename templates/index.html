@@ -99,17 +99,53 @@
                 <form id="student-form">
                     <div class="form-group">
                         <label for="student-id">Student ID:</label>
-                        <input type="text" id="student-id" name="student_id" required>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="student-id" name="student_id" required style="flex: 1;">
+                            <button type="button" id="lookup-student-btn" class="btn btn-secondary">Select from Database</button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="student-name">Full Name:</label>
                         <input type="text" id="student-name" name="name" required>
                     </div>
 
-                    <button type="submit" class="btn btn-primary" id="enroll-submit-btn">Enroll Student</button>
+                    <button type="submit" class="btn btn-primary" id="enroll-submit-btn">Enroll Face</button>
                 </form>
             </div>
             <div id="enroll-result" class="result-box"></div>
+        </div>
+
+        <!-- Student Lookup Modal -->
+        <div id="student-lookup-modal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 800px;">
+                <span class="close-modal" onclick="closeStudentLookup()">&times;</span>
+                <h2>Select Student from Database</h2>
+                
+                <div class="form-group">
+                    <label for="student-search">Search by Name or ID:</label>
+                    <input type="text" id="student-search" placeholder="Type to search...">
+                </div>
+                
+                <div class="form-group">
+                    <label for="course-filter">Filter by Course:</label>
+                    <select id="course-filter">
+                        <option value="">All Students</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="no-photo-filter">
+                        Show only students without face photos
+                    </label>
+                </div>
+                
+                <button id="search-students-btn" class="btn btn-primary">Search</button>
+                
+                <div id="student-results" style="margin-top: 20px; max-height: 400px; overflow-y: auto;">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
         </div>
 
         <!-- Students Tab -->
@@ -158,8 +194,46 @@
                 <nav class="admin-tabs" style="margin-bottom: 30px;">
                     <button class="admin-tab-btn active" data-admin-tab="courses">Courses</button>
                     <button class="admin-tab-btn" data-admin-tab="enrollments">Enrollments</button>
+                    <button class="admin-tab-btn" data-admin-tab="import">Import Students</button>
                     <button class="admin-tab-btn" data-admin-tab="export">Export Data</button>
                 </nav>
+
+                <!-- Import Students Section -->
+                <div id="admin-import" class="admin-tab-content">
+                    <h3>Bulk Import Students</h3>
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h4>Instructions:</h4>
+                        <ol>
+                            <li>Download the Excel template below</li>
+                            <li>Fill in student data (Student ID and Full Name are required)</li>
+                            <li>Upload the completed Excel file</li>
+                            <li>Review the import results</li>
+                        </ol>
+                        <p><strong>Required columns:</strong> Student ID, Full Name</p>
+                        <p><strong>Optional columns:</strong> Email, Phone</p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <button id="download-template-btn" class="btn btn-secondary">Download Excel Template</button>
+                    </div>
+
+                    <div style="background: #fff; padding: 20px; border: 2px dashed #ddd; border-radius: 10px;">
+                        <div class="form-group" style="margin-bottom: 20px; text-align: left;">
+                            <label for="import-course-select">Assign to Course (Optional):</label>
+                            <select id="import-course-select" class="form-control">
+                                <option value="">-- Select a course to auto-enroll students --</option>
+                            </select>
+                            <small style="color: #666; display: block; margin-top: 5px;">If selected, all imported students will be automatically enrolled in this course</small>
+                        </div>
+                        
+                        <h4>Upload Excel File</h4>
+                        <input type="file" id="excel-upload" accept=".xlsx,.xls" style="margin: 20px 0;">
+                        <br>
+                        <button id="import-excel-btn" class="btn btn-primary" disabled>Import Students</button>
+                    </div>
+
+                    <div id="import-result" class="result-box" style="margin-top: 20px;"></div>
+                </div>
 
                 <!-- Courses Section -->
                 <div id="admin-courses" class="admin-tab-content active">

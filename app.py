@@ -1,12 +1,15 @@
 import os
 import cv2
 import base64
-from flask import Flask, render_template, request, jsonify, Response, send_from_directory
+import io
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory, send_file
 from flask_cors import CORS
 from datetime import datetime
 from pathlib import Path
 import numpy as np
-from sqlalchemy import func
+from sqlalchemy import func, or_
+import pandas as pd
+from werkzeug.utils import secure_filename
 
 from config import Config
 from database import init_db, get_db, Student, Attendance, Course, CourseEnrollment
@@ -149,7 +152,235 @@ def enroll_student_face(student_id):
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@app.route('/api/students/bulk-import', methods=['POST'])
+def bulk_import_students():
+    """Bulk import students from Excel file"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'error': 'Invalid file format. Please upload Excel file (.xlsx or .xls)'}), 400
+    
+    # Get optional course_id for auto-enrollment
+    course_id = request.form.get('course_id')
+    
+    try:
+        # Read Excel file
+        df = pd.read_excel(file)
+        
+        # Validate required columns
+        required_cols = ['Student ID', 'Full Name']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return jsonify({
+                'success': False, 
+                'error': f'Missing required columns: {", ".join(missing_cols)}'
+            }), 400
+        
+        db = next(get_db())
+        
+        # Validate course if provided
+        course = None
+        if course_id:
+            course = db.query(Course).filter(Course.id == int(course_id)).first()
+            if not course:
+                return jsonify({'success': False, 'error': 'Invalid course selected'}), 400
+        
+        imported = 0
+        enrolled = 0
+        errors = []
+        skipped = 0
+        
+        for index, row in df.iterrows():
+            try:
+                # Skip empty rows
+                if pd.isna(row['Student ID']) or pd.isna(row['Full Name']):
+                    skipped += 1
+                    continue
+                
+                student_id = str(row['Student ID']).strip()
+                name = str(row['Full Name']).strip()
+                
+                # Check if student already exists
+                existing = db.query(Student).filter(
+                    Student.student_id == student_id
+                ).first()
+                
+                if existing:
+                    errors.append(f"Row {index + 2}: Student ID '{student_id}' already exists")
+                    # Still try to enroll if course is selected and not already enrolled
+                    if course:
+                        existing_enrollment = db.query(CourseEnrollment).filter(
+                            CourseEnrollment.student_id == existing.id,
+                            CourseEnrollment.course_id == course.id
+                        ).first()
+                        if not existing_enrollment:
+                            enrollment = CourseEnrollment(
+                                student_id=existing.id,
+                                course_id=course.id
+                            )
+                            db.add(enrollment)
+                            enrolled += 1
+                    continue
+                
+                # Create new student
+                student = Student(
+                    student_id=student_id,
+                    name=name,
+                    email=str(row.get('Email', '')) if not pd.isna(row.get('Email')) else '',
+                    phone=str(row.get('Phone', '')) if not pd.isna(row.get('Phone')) else ''
+                )
+                db.add(student)
+                db.flush()  # Get the student ID
+                imported += 1
+                
+                # Auto-enroll in course if selected
+                if course:
+                    enrollment = CourseEnrollment(
+                        student_id=student.id,
+                        course_id=course.id
+                    )
+                    db.add(enrollment)
+                    enrolled += 1
+                
+            except Exception as e:
+                errors.append(f"Row {index + 2}: {str(e)}")
+        
+        db.commit()
+        
+        message = f'Successfully imported {imported} students'
+        if enrolled > 0:
+            message += f' and enrolled {enrolled} in {course.course_code}'
+        if skipped > 0:
+            message += f', skipped {skipped} empty rows'
+        
+        return jsonify({
+            'success': True,
+            'imported': imported,
+            'enrolled': enrolled,
+            'skipped': skipped,
+            'errors': errors,
+            'message': message
+        })
+        
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': f'Failed to process file: {str(e)}'}), 400
+
+@app.route('/api/students/export-template', methods=['GET'])
+def export_template():
+    """Download Excel template for bulk import"""
+    try:
+        # Create sample DataFrame
+        df = pd.DataFrame({
+            'Student ID': ['STU001', 'STU002', 'STU003'],
+            'Full Name': ['John Doe', 'Jane Smith', 'Mike Johnson'],
+            'Email': ['john@university.edu', 'jane@university.edu', 'mike@university.edu'],
+            'Phone': ['+1234567890', '+1234567891', '+1234567892']
+        })
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Students')
+            
+            # Auto-adjust column widths
+            worksheet = writer.sheets['Students']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='student_import_template.xlsx'
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/students/search', methods=['GET'])
+def search_students():
+    """Search students by name or ID with optional filters"""
+    query = request.args.get('q', '').strip()
+    course_id = request.args.get('course_id')
+    no_photo = request.args.get('no_photo') == 'true'
+    
+    db = next(get_db())
+    students_query = db.query(Student).filter(Student.is_active == True)
+    
+    # Filter by search query
+    if query:
+        students_query = students_query.filter(
+            or_(
+                Student.name.ilike(f'%{query}%'),
+                Student.student_id.ilike(f'%{query}%')
+            )
+        )
+    
+    # Filter by course enrollment
+    if course_id:
+        students_query = students_query.join(CourseEnrollment).filter(
+            CourseEnrollment.course_id == int(course_id),
+            CourseEnrollment.is_active == True
+        )
+    
+    # Filter students without face photos
+    if no_photo:
+        students_query = students_query.filter(Student.face_encoding_path == None)
+    
+    students = students_query.all()
+    
+    result = []
+    for s in students:
+        # Get enrolled courses for this student
+        enrollments = db.query(CourseEnrollment).filter(
+            CourseEnrollment.student_id == s.id,
+            CourseEnrollment.is_active == True
+        ).all()
+        
+        courses = []
+        for enrollment in enrollments:
+            course = db.query(Course).filter(Course.id == enrollment.course_id).first()
+            if course:
+                courses.append({
+                    'id': course.id,
+                    'code': course.course_code,
+                    'name': course.course_name
+                })
+        
+        result.append({
+            'id': s.id,
+            'student_id': s.student_id,
+            'name': s.name,
+            'email': s.email or '',
+            'phone': s.phone or '',
+            'has_photo': s.face_encoding_path is not None,
+            'courses': courses
+        })
+    
+    return jsonify({
+        'success': True,
+        'students': result,
+        'count': len(result)
+    })
+
 @app.route('/api/attendance', methods=['GET'])
+
 def get_attendance():
     """Get attendance records"""
     db = next(get_db())

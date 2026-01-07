@@ -596,6 +596,11 @@ document.querySelectorAll('.admin-tab-btn').forEach(btn => {
         // Add active class to selected tab
         btn.classList.add('active');
         document.getElementById(`admin-${tabName}`).classList.add('active');
+        
+        // Load courses for import dropdown when import tab is opened
+        if (tabName === 'import') {
+            loadCoursesForImport();
+        }
     });
 });
 
@@ -935,3 +940,222 @@ document.getElementById('export-btn').addEventListener('click', () => {
     // Download the CSV
     window.location.href = url;
 });
+
+// ===== STUDENT LOOKUP =====
+
+async function loadCoursesForLookup() {
+    try {
+        const response = await fetch('/api/courses');
+        const courses = await response.json();
+
+        const select = document.getElementById('course-filter');
+        select.innerHTML = '<option value="">All Students</option>';
+
+        courses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course.id;
+            option.textContent = `${course.course_name} (${course.course_code})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading courses:', error);
+    }
+}
+
+async function loadCoursesForImport() {
+    try {
+        const response = await fetch('/api/courses');
+        const courses = await response.json();
+
+        const select = document.getElementById('import-course-select');
+        select.innerHTML = '<option value="">-- Select a course to auto-enroll students --</option>';
+
+        courses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course.id;
+            option.textContent = `${course.course_code} - ${course.course_name}`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading courses for import:', error);
+    }
+}
+
+document.getElementById('lookup-student-btn').addEventListener('click', () => {
+    document.getElementById('student-lookup-modal').style.display = 'block';
+    loadCoursesForLookup();
+    searchStudents(); // Load all students by default
+});
+
+function closeStudentLookup() {
+    document.getElementById('student-lookup-modal').style.display = 'none';
+}
+
+document.getElementById('search-students-btn').addEventListener('click', searchStudents);
+document.getElementById('student-search').addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') {
+        searchStudents();
+    }
+});
+
+async function searchStudents() {
+    const query = document.getElementById('student-search').value;
+    const courseId = document.getElementById('course-filter').value;
+    const noPhoto = document.getElementById('no-photo-filter').checked;
+
+    let url = '/api/students/search?';
+    if (query) url += `q=${encodeURIComponent(query)}&`;
+    if (courseId) url += `course_id=${courseId}&`;
+    if (noPhoto) url += 'no_photo=true&';
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        displayStudentResults(data.students);
+    } catch (error) {
+        console.error('Error searching students:', error);
+        alert('Error searching students');
+    }
+}
+
+function displayStudentResults(students) {
+    const resultsDiv = document.getElementById('student-results');
+
+    if (students.length === 0) {
+        resultsDiv.innerHTML = '<p style="text-align: center; color: #666;">No students found</p>';
+        return;
+    }
+
+    let html = '<table style="width: 100%; border-collapse: collapse;">';
+    html += '<thead><tr style="background: #f5f5f5;">';
+    html += '<th style="padding: 10px; border: 1px solid #ddd;">Student ID</th>';
+    html += '<th style="padding: 10px; border: 1px solid #ddd;">Name</th>';
+    html += '<th style="padding: 10px; border: 1px solid #ddd;">Courses</th>';
+    html += '<th style="padding: 10px; border: 1px solid #ddd;">Photo Status</th>';
+    html += '<th style="padding: 10px; border: 1px solid #ddd;">Action</th>';
+    html += '</tr></thead><tbody>';
+
+    students.forEach(student => {
+        const coursesText = student.courses.length > 0 
+            ? student.courses.map(c => c.code).join(', ') 
+            : 'Not enrolled';
+        const photoStatus = student.has_photo 
+            ? '<span style="color: green;">✅ Enrolled</span>' 
+            : '<span style="color: red;">❌ No photo</span>';
+
+        html += '<tr>';
+        html += `<td style="padding: 10px; border: 1px solid #ddd;">${student.student_id}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd;">${student.name}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd; font-size: 12px;">${coursesText}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${photoStatus}</td>`;
+        html += `<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">`;
+        html += `<button class="btn btn-primary" style="padding: 5px 15px; font-size: 14px;" onclick='selectStudent(${JSON.stringify(student)})'>Select</button>`;
+        html += '</td></tr>';
+    });
+
+    html += '</tbody></table>';
+    resultsDiv.innerHTML = html;
+}
+
+function selectStudent(student) {
+    // Auto-fill the enrollment form
+    document.getElementById('student-id').value = student.student_id;
+    document.getElementById('student-name').value = student.name;
+
+    // Close modal
+    closeStudentLookup();
+
+    // Show success message
+    const resultDiv = document.getElementById('enroll-result');
+    resultDiv.innerHTML = `<div class="success">Selected: ${student.name} (${student.student_id}). Now capture or upload their face photo.</div>`;
+    resultDiv.style.display = 'block';
+
+    // Scroll to form
+    document.getElementById('student-form').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ===== BULK IMPORT =====
+
+document.getElementById('excel-upload').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const btn = document.getElementById('import-excel-btn');
+    if (file) {
+        btn.disabled = false;
+        btn.textContent = `Import ${file.name}`;
+    } else {
+        btn.disabled = true;
+        btn.textContent = 'Import Students';
+    }
+});
+
+document.getElementById('download-template-btn').addEventListener('click', () => {
+    window.location.href = '/api/students/export-template';
+});
+
+document.getElementById('import-excel-btn').addEventListener('click', async () => {
+    const fileInput = document.getElementById('excel-upload');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert('Please select an Excel file');
+        return;
+    }
+
+    const courseSelect = document.getElementById('import-course-select');
+    const courseId = courseSelect.value;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    if (courseId) {
+        formData.append('course_id', courseId);
+    }
+
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.innerHTML = '<div class="info">Importing students... Please wait.</div>';
+    resultDiv.style.display = 'block';
+
+    try {
+        const response = await fetch('/api/students/bulk-import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            let message = `<div class="success"><strong>Import Successful!</strong><br>`;
+            message += `✅ Imported: ${data.imported} students<br>`;
+            if (data.enrolled > 0) {
+                message += `📚 Enrolled: ${data.enrolled} students in course<br>`;
+            }
+            if (data.skipped > 0) {
+                message += `⏭️ Skipped: ${data.skipped} empty rows<br>`;
+            }
+            if (data.errors.length > 0) {
+                message += `<br><strong>Errors:</strong><br>`;
+                message += `<ul style="text-align: left; margin: 10px 0;">`;
+                data.errors.forEach(error => {
+                    message += `<li>${error}</li>`;
+                });
+                message += '</ul>';
+            }
+            message += '</div>';
+            resultDiv.innerHTML = message;
+
+            // Reset file input
+            fileInput.value = '';
+            document.getElementById('import-excel-btn').disabled = true;
+            document.getElementById('import-excel-btn').textContent = 'Import Students';
+
+            // Refresh students list if on students tab
+            loadStudents();
+        } else {
+            resultDiv.innerHTML = `<div class="error">Import failed: ${data.error}</div>`;
+        }
+    } catch (error) {
+        console.error('Error importing:', error);
+        resultDiv.innerHTML = `<div class="error">Error importing students: ${error.message}</div>`;
+    }
+});
+
