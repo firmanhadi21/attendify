@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendify - Smart Attendance System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Attendify</h1>
+            <p>AI-Powered Attendance System</p>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="attendance">Mark Attendance</button>
+            <button class="tab-btn" data-tab="enroll">Enroll Student</button>
+            <button class="tab-btn" data-tab="students">Students</button>
+            <button class="tab-btn" data-tab="reports">Live Attendance Report</button>
+            <button class="tab-btn" data-tab="admin">Admin</button>
+        </nav>
+
+        <!-- Mark Attendance Tab -->
+        <div id="attendance-tab" class="tab-content active">
+            <h2>Mark Attendance - Automatic Detection</h2>
+            <p style="text-align: center; color: #666; margin-bottom: 20px;">
+                Stand in front of the camera. Attendance will be marked automatically when your face is recognized.
+            </p>
+
+            <!-- Camera and Course Selection -->
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                <div class="form-group">
+                    <label for="camera-select">Select Camera:</label>
+                    <select id="camera-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                        <option value="0">Camera 0 - Logitech USB Webcam</option>
+                        <option value="1" selected>Camera 1 - Mac Built-in (FaceTime HD)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="course-session-select">Select Course Session:</label>
+                    <select id="course-session-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                        <option value="">Loading courses...</option>
+                    </select>
+                </div>
+                <button id="apply-settings-btn" class="btn btn-primary" style="width: 100%;">Start Attendance Session</button>
+                <div id="session-info" style="display: none; margin-top: 15px; padding: 10px; background: #d4edda; border-radius: 8px; color: #155724;">
+                    <strong>Active Session:</strong> <span id="active-course-name"></span><br>
+                    <strong>Camera:</strong> <span id="active-camera-name"></span>
+                </div>
+            </div>
+
+            <div class="camera-section">
+                <div class="video-container">
+                    <img id="video-feed" src="/api/video_feed?camera=1" alt="Live Camera Feed" style="width: 100%; border-radius: 10px;">
+                </div>
+                <div style="margin-top: 20px; text-align: center;">
+                    <p><strong>Status:</strong> <span id="detection-status" style="color: #667eea;">Monitoring...</span></p>
+                    <p style="color: #666; font-size: 14px;">✓ = Attendance Marked | (Done) = Already Marked Today | (Recent) = Just Detected</p>
+                </div>
+            </div>
+            <div id="attendance-result" class="result-box"></div>
+        </div>
+
+        <!-- Enroll Student Tab -->
+        <div id="enroll-tab" class="tab-content">
+            <h2>Enroll New Student</h2>
+            <div class="enroll-section">
+                <!-- Live Camera Feed -->
+                <div class="camera-section">
+                    <div class="video-container">
+                        <video id="enroll-video" autoplay playsinline></video>
+                        <canvas id="enroll-canvas" style="display: none;"></canvas>
+                        <div id="camera-placeholder" style="display: flex; align-items: center; justify-content: center; background: #000; min-height: 400px; color: #fff; flex-direction: column;">
+                            <p style="margin-bottom: 20px;">Camera will start automatically...</p>
+                            <button type="button" id="manual-start-camera" class="btn btn-primary">Click to Start Camera</button>
+                        </div>
+                    </div>
+                    <div class="camera-controls">
+                        <button type="button" id="capture-photo-btn" class="btn btn-primary">Capture Photo</button>
+                        <button type="button" id="retake-photo-btn" class="btn btn-secondary" style="display: none;">Retake</button>
+                        <button type="button" id="toggle-upload-btn" class="btn btn-secondary">Or Upload Photo</button>
+                    </div>
+                    <div id="captured-preview" style="display: none;">
+                        <h4>Captured Photo:</h4>
+                        <img id="preview-image" alt="Captured photo">
+                    </div>
+                </div>
+
+                <!-- File Upload Section -->
+                <div id="file-upload-section" style="display: none;">
+                    <div class="upload-section">
+                        <input type="file" id="face-upload" accept="image/*">
+                        <button type="button" id="back-to-camera-btn" class="btn btn-secondary">Back to Camera</button>
+                    </div>
+                </div>
+
+                <!-- Enrollment Form -->
+                <form id="student-form">
+                    <div class="form-group">
+                        <label for="student-id">Student ID:</label>
+                        <input type="text" id="student-id" name="student_id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="student-name">Full Name:</label>
+                        <input type="text" id="student-name" name="name" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="enroll-submit-btn">Enroll Student</button>
+                </form>
+            </div>
+            <div id="enroll-result" class="result-box"></div>
+        </div>
+
+        <!-- Students Tab -->
+        <div id="students-tab" class="tab-content">
+            <h2>Registered Students</h2>
+            <div id="students-list" class="students-grid"></div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="reports-tab" class="tab-content">
+            <h2>Live Attendance Report</h2>
+            <div id="live-course-info" style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0; color: #666;">Select a course session in the Mark Attendance tab to view live attendance</p>
+            </div>
+            <div id="attendance-list" class="attendance-table"></div>
+        </div>
+    </div>
+
+        <!-- Admin Tab -->
+        <div id="admin-tab" class="tab-content">
+            <!-- Admin Login Screen -->
+            <div id="admin-login" style="max-width: 400px; margin: 50px auto;">
+                <h2>Admin Login</h2>
+                <form id="admin-login-form">
+                    <div class="form-group">
+                        <label for="admin-username">Username:</label>
+                        <input type="text" id="admin-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-password">Password:</label>
+                        <input type="password" id="admin-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+                <div id="login-result" class="result-box"></div>
+            </div>
+
+            <!-- Admin Dashboard (hidden by default) -->
+            <div id="admin-dashboard" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2>Admin Dashboard</h2>
+                    <button id="admin-logout-btn" class="btn btn-secondary">Logout</button>
+                </div>
+
+                <!-- Admin Sub-Tabs -->
+                <nav class="admin-tabs" style="margin-bottom: 30px;">
+                    <button class="admin-tab-btn active" data-admin-tab="courses">Courses</button>
+                    <button class="admin-tab-btn" data-admin-tab="enrollments">Enrollments</button>
+                    <button class="admin-tab-btn" data-admin-tab="export">Export Data</button>
+                </nav>
+
+                <!-- Courses Section -->
+                <div id="admin-courses" class="admin-tab-content active">
+                    <h3>Course Management</h3>
+                    <button id="add-course-btn" class="btn btn-primary" style="margin-bottom: 20px;">Add New Course</button>
+
+                    <!-- Course Form (hidden by default) -->
+                    <div id="course-form-section" style="display: none; background: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h4 id="course-form-title">Add New Course</h4>
+                        <form id="course-form">
+                            <input type="hidden" id="course-id">
+                            <div class="form-group">
+                                <label for="course-code">Course Code:</label>
+                                <input type="text" id="course-code" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="course-name">Course Name:</label>
+                                <input type="text" id="course-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="start-time">Start Time:</label>
+                                <input type="time" id="start-time" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="end-time">End Time:</label>
+                                <input type="time" id="end-time" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="days-of-week">Days of Week:</label>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <label><input type="checkbox" name="days" value="Mon"> Monday</label>
+                                    <label><input type="checkbox" name="days" value="Tue"> Tuesday</label>
+                                    <label><input type="checkbox" name="days" value="Wed"> Wednesday</label>
+                                    <label><input type="checkbox" name="days" value="Thu"> Thursday</label>
+                                    <label><input type="checkbox" name="days" value="Fri"> Friday</label>
+                                    <label><input type="checkbox" name="days" value="Sat"> Saturday</label>
+                                    <label><input type="checkbox" name="days" value="Sun"> Sunday</label>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="save-course-btn">Save Course</button>
+                            <button type="button" class="btn btn-secondary" id="cancel-course-btn">Cancel</button>
+                        </form>
+                        <div id="course-form-result" class="result-box"></div>
+                    </div>
+
+                    <!-- Courses List -->
+                    <div id="courses-list"></div>
+                </div>
+
+                <!-- Enrollments Section -->
+                <div id="admin-enrollments" class="admin-tab-content">
+                    <h3>Student Enrollments</h3>
+                    <button id="add-enrollment-btn" class="btn btn-primary" style="margin-bottom: 20px;">Enroll Student in Course</button>
+
+                    <!-- Enrollment Form (hidden by default) -->
+                    <div id="enrollment-form-section" style="display: none; background: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h4>Enroll Student in Course</h4>
+                        <form id="enrollment-form">
+                            <div class="form-group">
+                                <label for="enroll-student-select">Select Student:</label>
+                                <select id="enroll-student-select" required>
+                                    <option value="">-- Select Student --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="enroll-course-select">Select Course:</label>
+                                <select id="enroll-course-select" required>
+                                    <option value="">-- Select Course --</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Enroll</button>
+                            <button type="button" class="btn btn-secondary" id="cancel-enrollment-btn">Cancel</button>
+                        </form>
+                        <div id="enrollment-form-result" class="result-box"></div>
+                    </div>
+
+                    <!-- Enrollments List -->
+                    <div id="enrollments-list"></div>
+                </div>
+
+                <!-- Export Section -->
+                <div id="admin-export" class="admin-tab-content">
+                    <h3>Export Attendance Data</h3>
+                    <div style="background: #f5f5f5; padding: 20px; border-radius: 10px;">
+                        <div class="form-group">
+                            <label for="export-course-filter">Filter by Course:</label>
+                            <select id="export-course-filter">
+                                <option value="">All Courses</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="export-start-date">Start Date:</label>
+                            <input type="date" id="export-start-date">
+                        </div>
+                        <div class="form-group">
+                            <label for="export-end-date">End Date:</label>
+                            <input type="date" id="export-end-date">
+                        </div>
+                        <button id="export-btn" class="btn btn-primary">Download CSV</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

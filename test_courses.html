@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Course Loading</title>
+</head>
+<body>
+    <h1>Course Loading Test</h1>
+    <select id="course-test">
+        <option>Loading...</option>
+    </select>
+    <div id="result"></div>
+
+    <script>
+        async function testCourses() {
+            try {
+                console.log('Fetching courses...');
+                const response = await fetch('/api/courses');
+                console.log('Response status:', response.status);
+
+                const courses = await response.json();
+                console.log('Courses received:', courses);
+
+                const select = document.getElementById('course-test');
+                select.innerHTML = '<option value="">-- Select Course --</option>';
+
+                courses.forEach(course => {
+                    const option = document.createElement('option');
+                    option.value = course.id;
+                    option.textContent = `${course.course_code} - ${course.course_name}`;
+                    select.appendChild(option);
+                });
+
+                document.getElementById('result').innerHTML =
+                    `<p style="color: green;">Success! Loaded ${courses.length} courses.</p>`;
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('result').innerHTML =
+                    `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        testCourses();
+    </script>
+</body>
+</html>
