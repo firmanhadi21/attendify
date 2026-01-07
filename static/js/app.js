@@ -100,30 +100,45 @@ document.getElementById('student-form').addEventListener('submit', async (e) => 
     try {
         showResult('enroll-result', 'Enrolling student...', 'success');
 
-        // Step 1: Create student
-        const studentData = {
-            student_id: studentId,
-            name: studentName,
-            email: null,
-            phone: null
-        };
+        // Step 1: Check if student already exists
+        const checkResponse = await fetch('/api/students');
+        const allStudents = await checkResponse.json();
+        const existingStudent = allStudents.find(s => s.student_id === studentId);
 
-        const createResponse = await fetch('/api/students', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(studentData)
-        });
+        let studentDbId;
 
-        const createData = await createResponse.json();
+        if (existingStudent) {
+            // Student exists - use existing ID for re-enrollment (multiple angles)
+            studentDbId = existingStudent.id;
+            console.log(`Student ${studentId} already exists, adding additional face angle...`);
+        } else {
+            // Student doesn't exist - create new student
+            const studentData = {
+                student_id: studentId,
+                name: studentName,
+                email: null,
+                phone: null
+            };
 
-        if (!createData.success) {
-            showResult('enroll-result', createData.error || 'Failed to create student', 'error');
-            return;
+            const createResponse = await fetch('/api/students', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(studentData)
+            });
+
+            const createData = await createResponse.json();
+
+            if (!createData.success) {
+                showResult('enroll-result', createData.error || 'Failed to create student', 'error');
+                return;
+            }
+
+            studentDbId = createData.student.id;
         }
 
-        // Step 2: Enroll face
+        // Step 2: Enroll face (works for both new and existing students)
         const formData = new FormData();
         if (capturedPhotoBlob) {
             formData.append('image', capturedPhotoBlob, 'captured_photo.jpg');
@@ -131,7 +146,7 @@ document.getElementById('student-form').addEventListener('submit', async (e) => 
             formData.append('image', uploadedFile);
         }
 
-        const enrollResponse = await fetch(`/api/students/${createData.student.id}/enroll`, {
+        const enrollResponse = await fetch(`/api/students/${studentDbId}/enroll`, {
             method: 'POST',
             body: formData
         });
@@ -139,7 +154,10 @@ document.getElementById('student-form').addEventListener('submit', async (e) => 
         const enrollData = await enrollResponse.json();
 
         if (enrollData.success) {
-            showResult('enroll-result', `Student "${studentName}" enrolled successfully!`, 'success');
+            const message = existingStudent 
+                ? `Additional face angle for "${studentName}" enrolled successfully! You can enroll more angles for better recognition.`
+                : `Student "${studentName}" enrolled successfully! You can enroll additional angles for better recognition.`;
+            showResult('enroll-result', message, 'success');
 
             // Reset form
             document.getElementById('student-form').reset();
@@ -453,7 +471,13 @@ async function loadCoursesForAttendance() {
             return;
         }
 
-        const response = await fetch('/api/courses');
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+        const response = await fetch('/api/courses', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -463,20 +487,28 @@ async function loadCoursesForAttendance() {
 
         select.innerHTML = '<option value="">-- Select Course Session --</option>';
 
-        courses.forEach(course => {
-            const option = document.createElement('option');
-            option.value = course.id;
-            option.textContent = `${course.course_code} - ${course.course_name} (${course.start_time} - ${course.end_time})`;
-            option.dataset.courseName = `${course.course_code} - ${course.course_name}`;
-            select.appendChild(option);
-        });
+        if (courses.length === 0) {
+            select.innerHTML += '<option value="" disabled>No courses available</option>';
+        } else {
+            courses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.id;
+                option.textContent = `${course.course_code} - ${course.course_name} (${course.start_time} - ${course.end_time})`;
+                option.dataset.courseName = `${course.course_code} - ${course.course_name}`;
+                select.appendChild(option);
+            });
+        }
 
         console.log('Course dropdown populated successfully');
     } catch (error) {
         console.error('Error loading courses:', error);
         const select = document.getElementById('course-session-select');
         if (select) {
-            select.innerHTML = '<option value="">Error loading courses</option>';
+            if (error.name === 'AbortError') {
+                select.innerHTML = '<option value="">Request timeout - Please refresh</option>';
+            } else {
+                select.innerHTML = '<option value="">Error loading courses - Click to retry</option>';
+            }
         }
     }
 }
@@ -504,7 +536,7 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
 
     // Show session info
     document.getElementById('active-course-name').textContent = currentCourseName;
-    const cameraName = selectedCamera === '0' ? 'Logitech USB Webcam' : 'Mac Built-in (FaceTime HD)';
+    const cameraName = 'Built-in Camera (FaceTime HD)';
     document.getElementById('active-camera-name').textContent = cameraName;
     document.getElementById('session-info').style.display = 'block';
 
@@ -1009,13 +1041,22 @@ async function searchStudents() {
     if (noPhoto) url += 'no_photo=true&';
 
     try {
+        console.log('Searching students with URL:', url);
         const response = await fetch(url);
         const data = await response.json();
-
-        displayStudentResults(data.students);
+        
+        console.log('Search response:', data);
+        
+        if (data.success) {
+            displayStudentResults(data.students);
+        } else {
+            console.error('Search failed:', data);
+            displayStudentResults([]);
+        }
     } catch (error) {
         console.error('Error searching students:', error);
-        alert('Error searching students');
+        alert('Error searching students: ' + error.message);
+        displayStudentResults([]);
     }
 }
 

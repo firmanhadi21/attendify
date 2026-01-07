@@ -335,8 +335,7 @@ def search_students():
     # Filter by course enrollment
     if course_id:
         students_query = students_query.join(CourseEnrollment).filter(
-            CourseEnrollment.course_id == int(course_id),
-            CourseEnrollment.is_active == True
+            CourseEnrollment.course_id == int(course_id)
         )
     
     # Filter students without face photos
@@ -349,8 +348,7 @@ def search_students():
     for s in students:
         # Get enrolled courses for this student
         enrollments = db.query(CourseEnrollment).filter(
-            CourseEnrollment.student_id == s.id,
-            CourseEnrollment.is_active == True
+            CourseEnrollment.student_id == s.id
         ).all()
         
         courses = []
@@ -668,9 +666,14 @@ def generate_frames(camera_index=None, course_id=None):
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
     """Get all courses"""
-    db = next(get_db())
-    courses = db.query(Course).filter(Course.is_active == True).all()
-    return jsonify([course.to_dict() for course in courses])
+    try:
+        db = next(get_db())
+        courses = db.query(Course).filter(Course.is_active == True).all()
+        print(f"Found {len(courses)} courses")
+        return jsonify([course.to_dict() for course in courses])
+    except Exception as e:
+        print(f"Error getting courses: {e}")
+        return jsonify([]), 200  # Return empty array instead of error
 
 @app.route('/api/courses', methods=['POST'])
 def create_course():

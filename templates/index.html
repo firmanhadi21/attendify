@@ -33,8 +33,7 @@
                 <div class="form-group">
                     <label for="camera-select">Select Camera:</label>
                     <select id="camera-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
-                        <option value="0">Camera 0 - Logitech USB Webcam</option>
-                        <option value="1" selected>Camera 1 - Mac Built-in (FaceTime HD)</option>
+                        <option value="0" selected>Camera 0 - Built-in Camera</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -52,7 +51,7 @@
 
             <div class="camera-section">
                 <div class="video-container">
-                    <img id="video-feed" src="/api/video_feed?camera=1" alt="Live Camera Feed" style="width: 100%; border-radius: 10px;">
+                    <img id="video-feed" src="/api/video_feed?camera=0" alt="Live Camera Feed" style="width: 100%; border-radius: 10px;">
                 </div>
                 <div style="margin-top: 20px; text-align: center;">
                     <p><strong>Status:</strong> <span id="detection-status" style="color: #667eea;">Monitoring...</span></p>
