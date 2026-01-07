@@ -545,7 +545,7 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
     // Show session info
     document.getElementById('active-course-name').textContent = currentCourseName;
     document.getElementById('active-week').textContent = `Week ${selectedWeek}`;
-    const cameraName = 'Built-in Camera (FaceTime HD)';
+    const cameraName = selectedCamera === '0' ? 'Logitech USB Webcam' : 'FaceTime HD';
     document.getElementById('active-camera-name').textContent = cameraName;
     document.getElementById('session-info').style.display = 'block';
 
