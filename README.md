@@ -203,18 +203,23 @@ http://localhost:5001
 
 **Importing Students from Excel:**
 1. Go to Admin → Import Students
-2. Prepare your Excel file with required columns:
+2. **(Optional) Select a Course** to auto-enroll students:
+   - Choose from dropdown: "Assign to Course (Optional)"
+   - All imported students will be automatically enrolled in the selected course
+   - Leave blank to only import students without enrollment
+3. Prepare your Excel file with required columns:
    - **Student ID** (required) - e.g., "STU001", "202301001"
    - **Full Name** (required) - e.g., "John Doe"
    - **Email** (optional) - e.g., "john.doe@university.edu"
    - **Phone** (optional) - e.g., "+1234567890"
-3. Click "Choose File" and select your Excel (.xlsx or .xls)
-4. Click "Import Students"
-5. System will:
+4. Click "Choose File" and select your Excel (.xlsx or .xls)
+5. Click "Import Students"
+6. System will:
    - Validate data format
    - Check for duplicate Student IDs
    - Create student records in database
-   - Show import summary (X students imported, Y errors)
+   - Auto-enroll in selected course (if specified)
+   - Show import summary (X students imported, Y enrolled, Z errors)
 
 **Excel Template Format:**
 ```
@@ -230,10 +235,17 @@ http://localhost:5001
 - Fill in your student data
 - Import the completed file
 
+**Auto-Enrollment Feature:**
+- ✅ Import and enroll students in one step
+- ✅ Saves time - no need to manually enroll each student
+- ✅ Perfect for new semester/course setup
+- ✅ Handles existing students (enrolls if not already enrolled)
+
 **Benefits:**
 - ✅ Bulk import hundreds of students at once
 - ✅ Reduce manual data entry errors
 - ✅ Integrate with existing student information systems
+- ✅ Automatic course enrollment during import
 - ✅ Update student information via re-import
 
 ### Student Face Enrollment
@@ -545,9 +557,13 @@ attendify/
 - `GET /api/students` - Get all students
 - `GET /api/students?course_id=<id>` - Get students enrolled in specific course
 - `GET /api/students?no_photo=true` - Get students without face photos
-- `GET /api/students/search?q=<query>` - Search students by name or ID
+- `GET /api/students/search?q=<query>&course_id=<id>&no_photo=true` - Search students with filters
 - `POST /api/students` - Create new student
 - `POST /api/students/bulk-import` - Bulk import students from Excel file (admin only)
+  - **Parameters**: 
+    - `file` (required): Excel file with student data
+    - `course_id` (optional): Auto-enroll all imported students in specified course
+  - **Response**: Import summary with counts (imported, enrolled, errors)
 - `POST /api/students/<id>/enroll` - Enroll student face with image
 - `GET /api/students/export-template` - Download Excel template for bulk import
 
@@ -876,8 +892,11 @@ For detailed schema information, see [database.py](database.py).
 ✅ CCTV/IP camera livestream support (RTSP, HTTP, RTMP)  
 ✅ Multiple camera source support  
 ✅ Bulk student import from Excel  
+✅ **Auto-enrollment during bulk import** - Import and enroll students in one step  
 ✅ Student lookup and selection from database  
 ✅ Course-based student filtering  
+✅ Excel template download for standardized imports  
+✅ Search students by name, ID, course, or photo status  
 
 ## Typical Workflow
 
@@ -886,11 +905,14 @@ For detailed schema information, see [database.py](database.py).
 2. Initialize database with `python init_admin.py`
 3. Login as admin and change default password
 4. Create courses with schedules
-5. **Import students in bulk**:
+5. **Import students with auto-enrollment**:
    - Download Excel template from Admin → Import Students
    - Fill in student data (ID, Name, Email, Phone)
+   - **(NEW)** Select a course from dropdown to auto-enroll during import
    - Upload and import the file
-6. **Enroll students in courses**:
+   - System creates students AND enrolls them in selected course in one step
+6. **Alternatively, enroll students separately**:
+   - If you didn't select a course during import
    - Go to Admin → Enrollments
    - Select student and course
    - Click "Enroll"
@@ -903,12 +925,14 @@ For detailed schema information, see [database.py](database.py).
 8. **Optional**: Configure CCTV/IP camera stream in [config.py](config.py)
 
 ### Semester/Term Setup (for new academic period)
-1. **Import new student batch**:
+1. **Import new student batch with auto-enrollment**:
    - Prepare Excel with new students
-   - Import via Admin → Import Students
-   - System validates and creates records
+   - Go to Admin → Import Students
+   - **(NEW)** Select the course from "Assign to Course" dropdown
+   - Import file - students are created AND enrolled automatically
+   - System validates and creates records with course enrollment
 2. **Create new courses** or update existing course schedules
-3. **Enroll students in courses** using Admin panel
+3. **Enroll additional students** (if needed) using Admin panel
 4. **Enroll student faces** using lookup feature:
    - Select from database by course
    - Batch process entire course enrollment
@@ -1287,6 +1311,11 @@ For issues, questions, or feature requests:
 - **Facenet512** model for face embeddings
 - Flask community for excellent web framework
 - PostgreSQL team for robust database system
+- **Claude AI** (Anthropic) for development assistance
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
