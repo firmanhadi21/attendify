@@ -152,6 +152,62 @@ def enroll_student_face(student_id):
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@app.route('/api/students/<int:student_db_id>', methods=['PUT'])
+def update_student(student_db_id):
+    """Update a student"""
+    data = request.json
+    db = next(get_db())
+
+    try:
+        student = db.query(Student).filter(Student.id == student_db_id).first()
+        if not student:
+            return jsonify({'success': False, 'error': 'Student not found'}), 404
+
+        if 'student_id' in data:
+            student.student_id = data['student_id']
+        if 'name' in data:
+            student.name = data['name']
+        if 'email' in data:
+            student.email = data['email']
+        if 'phone' in data:
+            student.phone = data['phone']
+
+        db.commit()
+        return jsonify({'success': True, 'student': student.to_dict()})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/students/<int:student_db_id>', methods=['DELETE'])
+def delete_student(student_db_id):
+    """Delete a student"""
+    db = next(get_db())
+
+    try:
+        student = db.query(Student).filter(Student.id == student_db_id).first()
+        if not student:
+            return jsonify({'success': False, 'error': 'Student not found'}), 404
+
+        # Delete associated data
+        db.query(CourseEnrollment).filter(CourseEnrollment.student_id == student.id).delete()
+        db.query(Attendance).filter(Attendance.student_id == student.id).delete()
+        
+        # Delete face encodings if exists
+        if student.face_encoding_path:
+            import os
+            face_path = os.path.join('data', 'student_faces', student.student_id)
+            if os.path.exists(face_path):
+                import shutil
+                shutil.rmtree(face_path)
+        
+        db.delete(student)
+        db.commit()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 @app.route('/api/students/bulk-import', methods=['POST'])
 def bulk_import_students():
     """Bulk import students from Excel file"""
@@ -575,7 +631,11 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                     if student_id in last_detected_students:
                         last_seen = last_detected_students[student_id]
                         if (current_time - last_seen).seconds < 30:
-                            labels.append(f"{student_id} (Recent)")
+                            # Get student name for label
+                            db = next(get_db())
+                            student = db.query(Student).filter(Student.student_id == student_id).first()
+                            student_name = student.name if student else student_id
+                            labels.append(f"{student_name} (Recent)")
                             continue
 
                     # Mark attendance automatically with course schedule check

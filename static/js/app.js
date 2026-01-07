@@ -638,9 +638,11 @@ document.querySelectorAll('.admin-tab-btn').forEach(btn => {
         btn.classList.add('active');
         document.getElementById(`admin-${tabName}`).classList.add('active');
         
-        // Load courses for import dropdown when import tab is opened
+        // Load data based on active tab
         if (tabName === 'import') {
             loadCoursesForImport();
+        } else if (tabName === 'students') {
+            loadStudentsAdmin();
         }
     });
 });
@@ -794,6 +796,134 @@ window.deleteCourse = async function(courseId) {
             loadCoursesForExport();
         } else {
             alert(data.error || 'Failed to delete course');
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+};
+
+// ===== STUDENT MANAGEMENT =====
+
+document.getElementById('add-student-btn').addEventListener('click', () => {
+    document.getElementById('student-form').reset();
+    document.getElementById('student-db-id').value = '';
+    document.getElementById('student-form-title').textContent = 'Add New Student';
+    document.getElementById('save-student-btn').textContent = 'Save Student';
+    document.getElementById('student-form-section').style.display = 'block';
+});
+
+document.getElementById('cancel-student-btn').addEventListener('click', () => {
+    document.getElementById('student-form-section').style.display = 'none';
+    document.getElementById('student-form').reset();
+});
+
+document.getElementById('student-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const dbId = document.getElementById('student-db-id').value;
+    const studentData = {
+        student_id: document.getElementById('student-id-input').value,
+        name: document.getElementById('student-name-input').value,
+        email: document.getElementById('student-email-input').value,
+        phone: document.getElementById('student-phone-input').value
+    };
+
+    try {
+        const url = dbId ? `/api/students/${dbId}` : '/api/students';
+        const method = dbId ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(studentData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showResult('student-form-result', `Student ${dbId ? 'updated' : 'created'} successfully!`, 'success');
+            document.getElementById('student-form').reset();
+            document.getElementById('student-form-section').style.display = 'none';
+            loadStudentsAdmin();
+        } else {
+            showResult('student-form-result', data.error || 'Operation failed', 'error');
+        }
+    } catch (error) {
+        showResult('student-form-result', `Error: ${error.message}`, 'error');
+    }
+});
+
+async function loadStudentsAdmin() {
+    try {
+        const response = await fetch('/api/students/search');
+        const data = await response.json();
+
+        const container = document.getElementById('students-list-admin');
+        if (!data.students || data.students.length === 0) {
+            container.innerHTML = '<p>No students found.</p>';
+            return;
+        }
+
+        let html = '<table style="width: 100%; border-collapse: collapse;">';
+        html += '<thead><tr style="background: #f0f0f0;">';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Student ID</th>';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Name</th>';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Email</th>';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Phone</th>';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Has Photo</th>';
+        html += '<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Actions</th>';
+        html += '</tr></thead><tbody>';
+
+        data.students.forEach(student => {
+            html += `<tr style="border: 1px solid #ddd;">`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">${student.student_id}</td>`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">${student.name}</td>`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">${student.email || 'N/A'}</td>`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">${student.phone || 'N/A'}</td>`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">${student.has_photo ? '✓ Yes' : '✗ No'}</td>`;
+            html += `<td style="padding: 12px; border: 1px solid #ddd;">`;
+            html += `<button class="btn-sm btn-primary" onclick="editStudent(${student.id}, '${student.student_id}', '${student.name}', '${student.email || ''}', '${student.phone || ''}')">Edit</button> `;
+            html += `<button class="btn-sm btn-danger" onclick="deleteStudent(${student.id}, '${student.name}')">Delete</button>`;
+            html += `</td></tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading students:', error);
+        document.getElementById('students-list-admin').innerHTML = '<p>Error loading students.</p>';
+    }
+}
+
+window.editStudent = function(id, studentId, name, email, phone) {
+    document.getElementById('student-db-id').value = id;
+    document.getElementById('student-id-input').value = studentId;
+    document.getElementById('student-name-input').value = name;
+    document.getElementById('student-email-input').value = email;
+    document.getElementById('student-phone-input').value = phone;
+    document.getElementById('student-form-title').textContent = 'Edit Student';
+    document.getElementById('save-student-btn').textContent = 'Update Student';
+    document.getElementById('student-form-section').style.display = 'block';
+    window.scrollTo(0, 0);
+};
+
+window.deleteStudent = async function(id, name) {
+    if (!confirm(`Are you sure you want to delete student "${name}"?\n\nThis will also delete:\n- All face photos\n- All enrollments\n- All attendance records`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/students/${id}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Student deleted successfully!');
+            loadStudentsAdmin();
+        } else {
+            alert(`Error: ${data.error}`);
         }
     } catch (error) {
         alert(`Error: ${error.message}`);

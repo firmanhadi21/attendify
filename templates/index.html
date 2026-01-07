@@ -214,6 +214,7 @@
                 <!-- Admin Sub-Tabs -->
                 <nav class="admin-tabs" style="margin-bottom: 30px;">
                     <button class="admin-tab-btn active" data-admin-tab="courses">Courses</button>
+                    <button class="admin-tab-btn" data-admin-tab="students">Students</button>
                     <button class="admin-tab-btn" data-admin-tab="enrollments">Enrollments</button>
                     <button class="admin-tab-btn" data-admin-tab="import">Import Students</button>
                     <button class="admin-tab-btn" data-admin-tab="export">Export Data</button>
@@ -302,6 +303,42 @@
 
                     <!-- Courses List -->
                     <div id="courses-list"></div>
+                </div>
+
+                <!-- Students Section -->
+                <div id="admin-students" class="admin-tab-content">
+                    <h3>Student Management</h3>
+                    <button id="add-student-btn" class="btn btn-primary" style="margin-bottom: 20px;">Add New Student</button>
+
+                    <!-- Student Form (hidden by default) -->
+                    <div id="student-form-section" style="display: none; background: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h4 id="student-form-title">Add New Student</h4>
+                        <form id="student-form">
+                            <input type="hidden" id="student-db-id">
+                            <div class="form-group">
+                                <label for="student-id-input">Student ID:</label>
+                                <input type="text" id="student-id-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="student-name-input">Full Name:</label>
+                                <input type="text" id="student-name-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="student-email-input">Email:</label>
+                                <input type="email" id="student-email-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="student-phone-input">Phone:</label>
+                                <input type="tel" id="student-phone-input">
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="save-student-btn">Save Student</button>
+                            <button type="button" class="btn btn-secondary" id="cancel-student-btn">Cancel</button>
+                        </form>
+                        <div id="student-form-result" class="result-box"></div>
+                    </div>
+
+                    <!-- Students List -->
+                    <div id="students-list-admin"></div>
                 </div>
 
                 <!-- Enrollments Section -->
