@@ -69,8 +69,9 @@ function switchTab(tabName) {
         // Auto-start webcam when entering enroll tab
         startEnrollWebcam();
     } else if (tabName === 'attendance') {
-        // Load courses when entering attendance tab
+        // Load courses and cameras when entering attendance tab
         loadCoursesForAttendance();
+        loadAvailableCameras();
         // Stop enrollment webcam when leaving enroll tab
         stopEnrollWebcam();
     } else {
@@ -458,8 +459,10 @@ function base64ToBlob(base64, contentType) {
 document.getElementById('manual-start-camera')?.addEventListener('click', startEnrollWebcam);
 
 // Camera and Course Session selection for Mark Attendance tab
-let currentCamera = 1; // Default to Mac built-in camera
+let currentCamera = null; // Will be set when user selects a camera
+let currentCameraLabel = ''; // Store the camera label
 let currentWeekNumber = null; // Current week number
+let availableCameras = []; // Store list of available cameras
 
 // Load courses for attendance session
 async function loadCoursesForAttendance() {
@@ -514,13 +517,82 @@ async function loadCoursesForAttendance() {
     }
 }
 
+// Enumerate and load available cameras
+async function loadAvailableCameras() {
+    try {
+        console.log('Enumerating cameras...');
+        const select = document.getElementById('camera-select');
+
+        if (!select) {
+            console.error('Camera select element not found!');
+            return;
+        }
+
+        // Request permissions first to get device labels
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            // Stop the stream immediately, we just needed permission
+            stream.getTracks().forEach(track => track.stop());
+        } catch (permError) {
+            console.warn('Camera permission denied:', permError);
+            select.innerHTML = '<option value="">Camera access denied - Please allow camera access</option>';
+            return;
+        }
+
+        // Enumerate all media devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+        console.log('Found video devices:', videoDevices);
+
+        if (videoDevices.length === 0) {
+            select.innerHTML = '<option value="">No cameras detected</option>';
+            return;
+        }
+
+        // Store available cameras
+        availableCameras = videoDevices;
+
+        // Populate the select dropdown
+        select.innerHTML = '<option value="">-- Select Camera --</option>';
+
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.dataset.deviceId = device.deviceId;
+            option.dataset.label = device.label || `Camera ${index}`;
+            option.textContent = device.label || `Camera ${index}`;
+            select.appendChild(option);
+        });
+
+        // Auto-select first camera if available
+        if (videoDevices.length > 0) {
+            select.selectedIndex = 1; // Select first camera (index 1 because index 0 is placeholder)
+        }
+
+        console.log('Camera dropdown populated with', videoDevices.length, 'cameras');
+    } catch (error) {
+        console.error('Error loading cameras:', error);
+        const select = document.getElementById('camera-select');
+        if (select) {
+            select.innerHTML = '<option value="">Error loading cameras - Click to retry</option>';
+        }
+    }
+}
+
 // Start attendance session with selected camera and course
 document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
-    const selectedCamera = document.getElementById('camera-select').value;
+    const cameraSelect = document.getElementById('camera-select');
+    const selectedCameraIndex = cameraSelect.value;
     const selectedCourse = document.getElementById('course-session-select').value;
     const selectedWeek = document.getElementById('week-select').value;
     const courseSelect = document.getElementById('course-session-select');
     const selectedOption = courseSelect.options[courseSelect.selectedIndex];
+
+    if (!selectedCameraIndex) {
+        showResult('attendance-result', 'Please select a camera!', 'error');
+        return;
+    }
 
     if (!selectedCourse) {
         showResult('attendance-result', 'Please select a course session!', 'error');
@@ -532,7 +604,10 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
         return;
     }
 
-    currentCamera = selectedCamera;
+    // Get the selected camera's label from the option
+    const selectedCameraOption = cameraSelect.options[cameraSelect.selectedIndex];
+    currentCameraLabel = selectedCameraOption.dataset.label || selectedCameraOption.textContent;
+    currentCamera = selectedCameraIndex;
     currentCourseId = selectedCourse;
     currentCourseName = selectedOption.dataset.courseName;
     currentWeekNumber = parseInt(selectedWeek);
@@ -540,13 +615,12 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
     // Update video feed URL with camera, course, and week parameters
     const videoFeed = document.getElementById('video-feed');
     const timestamp = new Date().getTime();
-    videoFeed.src = `/api/video_feed?camera=${selectedCamera}&course_id=${selectedCourse}&week=${selectedWeek}&t=${timestamp}`;
+    videoFeed.src = `/api/video_feed?camera=${selectedCameraIndex}&course_id=${selectedCourse}&week=${selectedWeek}&t=${timestamp}`;
 
     // Show session info
     document.getElementById('active-course-name').textContent = currentCourseName;
     document.getElementById('active-week').textContent = `Week ${selectedWeek}`;
-    const cameraName = selectedCamera === '0' ? 'Logitech USB Webcam' : 'FaceTime HD';
-    document.getElementById('active-camera-name').textContent = cameraName;
+    document.getElementById('active-camera-name').textContent = currentCameraLabel;
     document.getElementById('session-info').style.display = 'block';
 
     showResult('attendance-result', `Attendance session started for ${currentCourseName}`, 'success');
@@ -571,6 +645,12 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             console.log('Page loaded on enroll tab, starting camera...');
             startEnrollWebcam();
+        }, 500);
+    } else if (activeTab && activeTab.id === 'attendance-tab') {
+        // Load cameras if on attendance tab
+        setTimeout(() => {
+            console.log('Page loaded on attendance tab, loading cameras...');
+            loadAvailableCameras();
         }, 500);
     }
 });
