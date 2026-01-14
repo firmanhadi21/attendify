@@ -20,7 +20,8 @@ A web-based face recognition attendance system using YOLOv8 for face detection a
 ### Core Functionality
 - **Real-time Face Recognition**: Automatic attendance marking when students are detected
 - **Multi-Face Detection**: Detect and recognize multiple students simultaneously
-- **Multi-Camera Support**: Switch between USB webcams and built-in cameras
+- **Automatic Camera Detection**: Dynamically detects and lists all available cameras with proper labels
+- **Multi-Camera Support**: Switch between USB webcams, built-in cameras, and IP/CCTV streams
 - **Week Tracking**: Record attendance by week (Week 1-14) for semester planning
 - **Schedule-Based Sessions**: Attendance automatically linked to active course sessions
 - **Duplicate Prevention**: One attendance record per student per course session per day
@@ -160,6 +161,17 @@ FLASK_ENV=development
 SECRET_KEY=your-secret-key-here
 ```
 
+### Database Connection Pool
+
+The system uses an optimized connection pool for better stability and performance:
+
+- **Pool Size**: 20 connections (handles concurrent users)
+- **Max Overflow**: 40 additional connections during peak load
+- **Pool Recycle**: Connections recycled every hour (3600s) to prevent stale connections
+- **Pre-ping**: Validates connections before use to avoid database errors
+
+These settings are configured automatically in `database.py` and require no manual configuration.
+
 ### macOS Camera Access
 
 For macOS, add this to your `~/.zshrc` to enable camera access:
@@ -175,9 +187,19 @@ source ~/.zshrc
 
 ### Camera Configuration
 
-The system automatically detects available cameras. Configure in the UI:
-- **Camera 0**: Usually USB webcam (if connected)
-- **Camera 1**: Built-in FaceTime HD camera
+The system **automatically detects and enumerates all available cameras** when you navigate to the Mark Attendance tab. The camera dropdown is populated dynamically with actual device names (e.g., "Logitech C920", "FaceTime HD Camera") instead of generic labels.
+
+**How it works:**
+1. When entering the attendance tab, the browser requests camera permissions
+2. All available video input devices are detected and listed
+3. Cameras are shown with their actual device names for easy identification
+4. Select your preferred camera from the dropdown before starting a session
+
+**Supported camera types:**
+- USB webcams (automatically detected)
+- Built-in laptop cameras
+- IP/CCTV cameras (via RTSP URL in config)
+- Virtual cameras (OBS, etc.)
 
 ## Usage
 
@@ -510,9 +532,15 @@ export OPENCV_AVFOUNDATION_SKIP_AUTH=1
 source ~/.zshrc
 ```
 
-**Multiple cameras detected incorrectly:**
+**"Camera access denied" in dropdown:**
+- Allow camera permissions when prompted by browser
+- Check browser settings: Site permissions → Camera → Allow
+- Try refreshing the page after granting permissions
+
+**No cameras detected:**
+- Ensure cameras are connected before opening the page
 - Check camera indices with: `python list_cameras.py`
-- Update camera selection in UI dropdown
+- Refresh the attendance tab to re-detect cameras
 
 **Camera feed shows black screen:**
 - Check camera permissions in System Preferences
@@ -537,6 +565,12 @@ sudo systemctl start postgresql  # Linux
 createdb attendify_db
 python init_admin.py
 ```
+
+**"Connection pool exhausted" or timeout errors:**
+- The system uses a connection pool (20 connections + 40 overflow)
+- If still experiencing issues, restart the application
+- Check for long-running database queries
+- Ensure PostgreSQL is not under heavy load from other applications
 
 ### Face Recognition Issues
 
