@@ -312,11 +312,15 @@ def bulk_import_students():
                     continue
                 
                 # Create new student
+                # Use None for empty email/phone to avoid unique constraint violations
+                email_val = str(row.get('Email', '')).strip() if not pd.isna(row.get('Email')) else ''
+                phone_val = str(row.get('Phone', '')).strip() if not pd.isna(row.get('Phone')) else ''
+
                 student = Student(
                     student_id=student_id,
                     name=name,
-                    email=str(row.get('Email', '')) if not pd.isna(row.get('Email')) else '',
-                    phone=str(row.get('Phone', '')) if not pd.isna(row.get('Phone')) else ''
+                    email=email_val if email_val else None,
+                    phone=phone_val if phone_val else None
                 )
                 db.add(student)
                 db.flush()  # Get the student ID
