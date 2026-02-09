@@ -463,6 +463,7 @@ let currentCamera = null; // Will be set when user selects a camera
 let currentCameraLabel = ''; // Store the camera label
 let currentWeekNumber = null; // Current week number
 let availableCameras = []; // Store list of available cameras
+let attendanceSessionActive = false; // Track if attendance session is running
 
 // Load courses for attendance session
 async function loadCoursesForAttendance() {
@@ -581,7 +582,7 @@ async function loadAvailableCameras() {
 }
 
 // Start attendance session with selected camera and course
-document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
+document.getElementById('start-attendance-btn')?.addEventListener('click', () => {
     const cameraSelect = document.getElementById('camera-select');
     const selectedCameraIndex = cameraSelect.value;
     const selectedCourse = document.getElementById('course-session-select').value;
@@ -612,24 +613,94 @@ document.getElementById('apply-settings-btn')?.addEventListener('click', () => {
     currentCourseName = selectedOption.dataset.courseName;
     currentWeekNumber = parseInt(selectedWeek);
 
+    // Start video feed
+    startAttendanceSession();
+});
+
+// Stop attendance session
+document.getElementById('stop-attendance-btn')?.addEventListener('click', () => {
+    stopAttendanceSession();
+});
+
+function startAttendanceSession() {
+    if (attendanceSessionActive) return;
+
+    attendanceSessionActive = true;
+
     // Update video feed URL with camera, course, and week parameters
     const videoFeed = document.getElementById('video-feed');
+    const videoPlaceholder = document.getElementById('video-placeholder');
     const timestamp = new Date().getTime();
-    videoFeed.src = `/api/video_feed?camera=${selectedCameraIndex}&course_id=${selectedCourse}&week=${selectedWeek}&t=${timestamp}`;
+
+    videoFeed.src = `/api/video_feed?camera=${currentCamera}&course_id=${currentCourseId}&week=${currentWeekNumber}&t=${timestamp}`;
+    videoFeed.style.display = 'block';
+    videoPlaceholder.style.display = 'none';
 
     // Show session info
     document.getElementById('active-course-name').textContent = currentCourseName;
-    document.getElementById('active-week').textContent = `Week ${selectedWeek}`;
+    document.getElementById('active-week').textContent = `Week ${currentWeekNumber}`;
     document.getElementById('active-camera-name').textContent = currentCameraLabel;
     document.getElementById('session-info').style.display = 'block';
+
+    // Update buttons
+    document.getElementById('start-attendance-btn').style.display = 'none';
+    document.getElementById('stop-attendance-btn').style.display = 'block';
+
+    // Update status
+    document.getElementById('detection-status').textContent = 'Monitoring...';
+    document.getElementById('detection-status').style.color = '#667eea';
+
+    // Disable form inputs while session is active
+    document.getElementById('camera-select').disabled = true;
+    document.getElementById('course-session-select').disabled = true;
+    document.getElementById('week-select').disabled = true;
 
     showResult('attendance-result', `Attendance session started for ${currentCourseName}`, 'success');
 
     // Clear the result after 3 seconds
     setTimeout(() => {
-        document.getElementById('attendance-result').style.display = 'none';
+        const resultEl = document.getElementById('attendance-result');
+        if (resultEl) resultEl.style.display = 'none';
     }, 3000);
-});
+}
+
+function stopAttendanceSession() {
+    if (!attendanceSessionActive) return;
+
+    attendanceSessionActive = false;
+
+    // Stop video feed
+    const videoFeed = document.getElementById('video-feed');
+    const videoPlaceholder = document.getElementById('video-placeholder');
+
+    videoFeed.src = '';
+    videoFeed.style.display = 'none';
+    videoPlaceholder.style.display = 'flex';
+
+    // Hide session info
+    document.getElementById('session-info').style.display = 'none';
+
+    // Update buttons
+    document.getElementById('start-attendance-btn').style.display = 'block';
+    document.getElementById('stop-attendance-btn').style.display = 'none';
+
+    // Update status
+    document.getElementById('detection-status').textContent = 'Stopped';
+    document.getElementById('detection-status').style.color = '#666';
+
+    // Re-enable form inputs
+    document.getElementById('camera-select').disabled = false;
+    document.getElementById('course-session-select').disabled = false;
+    document.getElementById('week-select').disabled = false;
+
+    showResult('attendance-result', 'Attendance session stopped', 'success');
+
+    // Clear the result after 3 seconds
+    setTimeout(() => {
+        const resultEl = document.getElementById('attendance-result');
+        if (resultEl) resultEl.style.display = 'none';
+    }, 3000);
+}
 
 // Initialize - Load courses and handle tab-specific initialization
 document.addEventListener('DOMContentLoaded', () => {

@@ -62,7 +62,10 @@
                         <option value="14">Week 14</option>
                     </select>
                 </div>
-                <button id="apply-settings-btn" class="btn btn-primary" style="width: 100%;">Start Attendance Session</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="start-attendance-btn" class="btn btn-primary" style="flex: 1;">Start Attendance</button>
+                    <button id="stop-attendance-btn" class="btn btn-danger" style="flex: 1; display: none;">Stop Attendance</button>
+                </div>
                 <div id="session-info" style="display: none; margin-top: 15px; padding: 10px; background: #d4edda; border-radius: 8px; color: #155724;">
                     <strong>Active Session:</strong> <span id="active-course-name"></span><br>
                     <strong>Week:</strong> <span id="active-week"></span><br>
@@ -72,11 +75,19 @@
 
             <div class="camera-section">
                 <div class="video-container">
-                    <img id="video-feed" src="/api/video_feed?camera=0" alt="Live Camera Feed" style="width: 100%; border-radius: 10px;">
+                    <div id="video-placeholder" style="width: 100%; height: 480px; background: #1a1a2e; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #fff;">
+                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5; margin-bottom: 20px;">
+                            <path d="M23 7l-7 5 7 5V7z"></path>
+                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                        </svg>
+                        <p style="font-size: 18px; margin: 0;">Camera is stopped</p>
+                        <p style="font-size: 14px; opacity: 0.7; margin-top: 10px;">Select course, week, and camera, then click "Start Attendance"</p>
+                    </div>
+                    <img id="video-feed" src="" alt="Live Camera Feed" style="width: 100%; border-radius: 10px; display: none;">
                 </div>
                 <div style="margin-top: 20px; text-align: center;">
-                    <p><strong>Status:</strong> <span id="detection-status" style="color: #667eea;">Monitoring...</span></p>
-                    <p style="color: #666; font-size: 14px;">✓ = Attendance Marked | (Done) = Already Marked Today | (Recent) = Just Detected</p>
+                    <p><strong>Status:</strong> <span id="detection-status" style="color: #666;">Stopped</span></p>
+                    <p style="color: #666; font-size: 14px;">Start attendance to begin face recognition</p>
                 </div>
             </div>
             <div id="attendance-result" class="result-box"></div>

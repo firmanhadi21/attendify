@@ -105,8 +105,11 @@ def test():
 def get_students():
     """Get all students"""
     db = next(get_db())
-    students = db.query(Student).filter(Student.is_active == True).all()
-    return jsonify([student.to_dict() for student in students])
+    try:
+        students = db.query(Student).filter(Student.is_active == True).all()
+        return jsonify([student.to_dict() for student in students])
+    finally:
+        db.close()
 
 @app.route('/api/students', methods=['POST'])
 def create_student():
@@ -129,6 +132,8 @@ def create_student():
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/students/<int:student_id>/enroll', methods=['POST'])
 def enroll_student_face(student_id):
@@ -137,12 +142,12 @@ def enroll_student_face(student_id):
         return jsonify({'success': False, 'error': 'No image provided'}), 400
 
     db = next(get_db())
-    student = db.query(Student).filter(Student.id == student_id).first()
-
-    if not student:
-        return jsonify({'success': False, 'error': 'Student not found'}), 404
-
     try:
+        student = db.query(Student).filter(Student.id == student_id).first()
+
+        if not student:
+            return jsonify({'success': False, 'error': 'Student not found'}), 404
+
         # Save uploaded image
         image_file = request.files['image']
         student_folder = Config.UPLOAD_FOLDER / student.student_id
@@ -164,6 +169,8 @@ def enroll_student_face(student_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/students/<int:student_db_id>', methods=['PUT'])
 def update_student(student_db_id):
@@ -255,109 +262,114 @@ def bulk_import_students():
     try:
         # Read Excel file
         df = pd.read_excel(file)
-        
+
         # Validate required columns
         required_cols = ['Student ID', 'Full Name']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             return jsonify({
-                'success': False, 
+                'success': False,
                 'error': f'Missing required columns: {", ".join(missing_cols)}'
             }), 400
-        
-        db = next(get_db())
-        
-        # Validate course if provided
-        course = None
-        if course_id:
-            course = db.query(Course).filter(Course.id == int(course_id)).first()
-            if not course:
-                return jsonify({'success': False, 'error': 'Invalid course selected'}), 400
-        
-        imported = 0
-        enrolled = 0
-        errors = []
-        skipped = 0
-        
-        for index, row in df.iterrows():
-            try:
-                # Skip empty rows
-                if pd.isna(row['Student ID']) or pd.isna(row['Full Name']):
-                    skipped += 1
-                    continue
-                
-                student_id = str(row['Student ID']).strip()
-                name = str(row['Full Name']).strip()
-                
-                # Check if student already exists
-                existing = db.query(Student).filter(
-                    Student.student_id == student_id
-                ).first()
-                
-                if existing:
-                    errors.append(f"Row {index + 2}: Student ID '{student_id}' already exists")
-                    # Still try to enroll if course is selected and not already enrolled
-                    if course:
-                        existing_enrollment = db.query(CourseEnrollment).filter(
-                            CourseEnrollment.student_id == existing.id,
-                            CourseEnrollment.course_id == course.id
-                        ).first()
-                        if not existing_enrollment:
-                            enrollment = CourseEnrollment(
-                                student_id=existing.id,
-                                course_id=course.id
-                            )
-                            db.add(enrollment)
-                            enrolled += 1
-                    continue
-                
-                # Create new student
-                # Use None for empty email/phone to avoid unique constraint violations
-                email_val = str(row.get('Email', '')).strip() if not pd.isna(row.get('Email')) else ''
-                phone_val = str(row.get('Phone', '')).strip() if not pd.isna(row.get('Phone')) else ''
 
-                student = Student(
-                    student_id=student_id,
-                    name=name,
-                    email=email_val if email_val else None,
-                    phone=phone_val if phone_val else None
-                )
-                db.add(student)
-                db.flush()  # Get the student ID
-                imported += 1
-                
-                # Auto-enroll in course if selected
-                if course:
-                    enrollment = CourseEnrollment(
-                        student_id=student.id,
-                        course_id=course.id
+        db = next(get_db())
+
+        try:
+            # Validate course if provided
+            course = None
+            if course_id:
+                course = db.query(Course).filter(Course.id == int(course_id)).first()
+                if not course:
+                    return jsonify({'success': False, 'error': 'Invalid course selected'}), 400
+
+            imported = 0
+            enrolled = 0
+            errors = []
+            skipped = 0
+
+            for index, row in df.iterrows():
+                try:
+                    # Skip empty rows
+                    if pd.isna(row['Student ID']) or pd.isna(row['Full Name']):
+                        skipped += 1
+                        continue
+
+                    student_id = str(row['Student ID']).strip()
+                    name = str(row['Full Name']).strip()
+
+                    # Check if student already exists
+                    existing = db.query(Student).filter(
+                        Student.student_id == student_id
+                    ).first()
+
+                    if existing:
+                        errors.append(f"Row {index + 2}: Student ID '{student_id}' already exists")
+                        # Still try to enroll if course is selected and not already enrolled
+                        if course:
+                            existing_enrollment = db.query(CourseEnrollment).filter(
+                                CourseEnrollment.student_id == existing.id,
+                                CourseEnrollment.course_id == course.id
+                            ).first()
+                            if not existing_enrollment:
+                                enrollment = CourseEnrollment(
+                                    student_id=existing.id,
+                                    course_id=course.id
+                                )
+                                db.add(enrollment)
+                                enrolled += 1
+                        continue
+
+                    # Create new student
+                    # Use None for empty email/phone to avoid unique constraint violations
+                    email_val = str(row.get('Email', '')).strip() if not pd.isna(row.get('Email')) else ''
+                    phone_val = str(row.get('Phone', '')).strip() if not pd.isna(row.get('Phone')) else ''
+
+                    student = Student(
+                        student_id=student_id,
+                        name=name,
+                        email=email_val if email_val else None,
+                        phone=phone_val if phone_val else None
                     )
-                    db.add(enrollment)
-                    enrolled += 1
-                
-            except Exception as e:
-                errors.append(f"Row {index + 2}: {str(e)}")
-        
-        db.commit()
-        
-        message = f'Successfully imported {imported} students'
-        if enrolled > 0:
-            message += f' and enrolled {enrolled} in {course.course_code}'
-        if skipped > 0:
-            message += f', skipped {skipped} empty rows'
-        
-        return jsonify({
-            'success': True,
-            'imported': imported,
-            'enrolled': enrolled,
-            'skipped': skipped,
-            'errors': errors,
-            'message': message
-        })
-        
+                    db.add(student)
+                    db.flush()  # Get the student ID
+                    imported += 1
+
+                    # Auto-enroll in course if selected
+                    if course:
+                        enrollment = CourseEnrollment(
+                            student_id=student.id,
+                            course_id=course.id
+                        )
+                        db.add(enrollment)
+                        enrolled += 1
+
+                except Exception as e:
+                    errors.append(f"Row {index + 2}: {str(e)}")
+
+            db.commit()
+
+            message = f'Successfully imported {imported} students'
+            if enrolled > 0:
+                message += f' and enrolled {enrolled} in {course.course_code}'
+            if skipped > 0:
+                message += f', skipped {skipped} empty rows'
+
+            return jsonify({
+                'success': True,
+                'imported': imported,
+                'enrolled': enrolled,
+                'skipped': skipped,
+                'errors': errors,
+                'message': message
+            })
+        except Exception as e:
+            db.rollback()
+            return jsonify({'success': False, 'error': f'Failed to process file: {str(e)}'}), 400
+        finally:
+            db.close()
+
     except Exception as e:
-        db.rollback()
-        return jsonify({'success': False, 'error': f'Failed to process file: {str(e)}'}), 400
+        return jsonify({'success': False, 'error': f'Failed to read file: {str(e)}'}), 400
 
 @app.route('/api/students/export-template', methods=['GET'])
 def export_template():
@@ -407,92 +419,97 @@ def search_students():
     query = request.args.get('q', '').strip()
     course_id = request.args.get('course_id')
     no_photo = request.args.get('no_photo') == 'true'
-    
+
     db = next(get_db())
-    students_query = db.query(Student).filter(Student.is_active == True)
-    
-    # Filter by search query
-    if query:
-        students_query = students_query.filter(
-            or_(
-                Student.name.ilike(f'%{query}%'),
-                Student.student_id.ilike(f'%{query}%')
+    try:
+        students_query = db.query(Student).filter(Student.is_active == True)
+
+        # Filter by search query
+        if query:
+            students_query = students_query.filter(
+                or_(
+                    Student.name.ilike(f'%{query}%'),
+                    Student.student_id.ilike(f'%{query}%')
+                )
             )
-        )
-    
-    # Filter by course enrollment
-    if course_id:
-        students_query = students_query.join(CourseEnrollment).filter(
-            CourseEnrollment.course_id == int(course_id)
-        )
-    
-    # Filter students without face photos
-    if no_photo:
-        students_query = students_query.filter(Student.face_encoding_path == None)
-    
-    students = students_query.all()
-    
-    result = []
-    for s in students:
-        # Get enrolled courses for this student
-        enrollments = db.query(CourseEnrollment).filter(
-            CourseEnrollment.student_id == s.id
-        ).all()
-        
-        courses = []
-        for enrollment in enrollments:
-            course = db.query(Course).filter(Course.id == enrollment.course_id).first()
-            if course:
-                courses.append({
-                    'id': course.id,
-                    'code': course.course_code,
-                    'name': course.course_name
-                })
-        
-        result.append({
-            'id': s.id,
-            'student_id': s.student_id,
-            'name': s.name,
-            'email': s.email or '',
-            'phone': s.phone or '',
-            'has_photo': s.face_encoding_path is not None,
-            'courses': courses
+
+        # Filter by course enrollment
+        if course_id:
+            students_query = students_query.join(CourseEnrollment).filter(
+                CourseEnrollment.course_id == int(course_id)
+            )
+
+        # Filter students without face photos
+        if no_photo:
+            students_query = students_query.filter(Student.face_encoding_path == None)
+
+        students = students_query.all()
+
+        result = []
+        for s in students:
+            # Get enrolled courses for this student
+            enrollments = db.query(CourseEnrollment).filter(
+                CourseEnrollment.student_id == s.id
+            ).all()
+
+            courses = []
+            for enrollment in enrollments:
+                course = db.query(Course).filter(Course.id == enrollment.course_id).first()
+                if course:
+                    courses.append({
+                        'id': course.id,
+                        'code': course.course_code,
+                        'name': course.course_name
+                    })
+
+            result.append({
+                'id': s.id,
+                'student_id': s.student_id,
+                'name': s.name,
+                'email': s.email or '',
+                'phone': s.phone or '',
+                'has_photo': s.face_encoding_path is not None,
+                'courses': courses
+            })
+
+        return jsonify({
+            'success': True,
+            'students': result,
+            'count': len(result)
         })
-    
-    return jsonify({
-        'success': True,
-        'students': result,
-        'count': len(result)
-    })
+    finally:
+        db.close()
 
 @app.route('/api/attendance', methods=['GET'])
-
 def get_attendance():
     """Get attendance records"""
     db = next(get_db())
-    date = request.args.get('date')
+    try:
+        date = request.args.get('date')
 
-    query = db.query(Attendance)
+        query = db.query(Attendance)
 
-    if date:
-        try:
-            date_obj = datetime.fromisoformat(date)
-            query = query.filter(Attendance.timestamp >= date_obj)
-        except ValueError:
-            pass
+        if date:
+            try:
+                date_obj = datetime.fromisoformat(date)
+                query = query.filter(Attendance.timestamp >= date_obj)
+            except ValueError:
+                pass
 
-    records = query.order_by(Attendance.timestamp.desc()).limit(100).all()
-    return jsonify([record.to_dict() for record in records])
+        records = query.order_by(Attendance.timestamp.desc()).limit(100).all()
+        return jsonify([record.to_dict() for record in records])
+    finally:
+        db.close()
 
 @app.route('/api/attendance/live', methods=['GET'])
 def get_live_attendance():
     """Get live attendance for a specific course"""
-    db = next(get_db())
     course_id = request.args.get('course_id')
 
     if not course_id:
         return jsonify({'success': False, 'error': 'Course ID is required'}), 400
 
+    db = next(get_db())
     try:
         # Get the course
         course = db.query(Course).filter(Course.id == int(course_id)).first()
@@ -538,6 +555,8 @@ def get_live_attendance():
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        db.close()
 
 @app.route('/api/attendance/mark', methods=['POST'])
 def mark_attendance():
@@ -562,51 +581,54 @@ def mark_attendance():
             return jsonify({'success': False, 'error': 'No faces detected'}), 400
 
         db = next(get_db())
-        marked_students = []
+        try:
+            marked_students = []
 
-        # Process each detected face
-        for i, bbox in enumerate(faces):
-            # Extract face
-            face_img = face_detector.extract_face(frame, bbox)
-            face_path = Config.UPLOAD_FOLDER / 'temp' / f"face_{datetime.now().timestamp()}_{i}.jpg"
-            cv2.imwrite(str(face_path), face_img)
+            # Process each detected face
+            for i, bbox in enumerate(faces):
+                # Extract face
+                face_img = face_detector.extract_face(frame, bbox)
+                face_path = Config.UPLOAD_FOLDER / 'temp' / f"face_{datetime.now().timestamp()}_{i}.jpg"
+                cv2.imwrite(str(face_path), face_img)
 
-            # Recognize face
-            student_id, confidence = face_recognizer.recognize_face(face_path)
+                # Recognize face
+                student_id, confidence = face_recognizer.recognize_face(face_path)
 
-            if student_id:
-                # Get student from database
-                student = db.query(Student).filter(Student.student_id == student_id).first()
+                if student_id:
+                    # Get student from database
+                    student = db.query(Student).filter(Student.student_id == student_id).first()
 
-                if student:
-                    # Check if already marked today
-                    today = datetime.now().date()
-                    existing = db.query(Attendance).filter(
-                        Attendance.student_id == student.id,
-                        Attendance.timestamp >= datetime.combine(today, datetime.min.time())
-                    ).first()
+                    if student:
+                        # Check if already marked today
+                        today = datetime.now().date()
+                        existing = db.query(Attendance).filter(
+                            Attendance.student_id == student.id,
+                            Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+                        ).first()
 
-                    if not existing:
-                        # Mark attendance
-                        attendance = Attendance(
-                            student_id=student.id,
-                            confidence=f"{confidence:.2%}",
-                            image_path=str(face_path)
-                        )
-                        db.add(attendance)
-                        marked_students.append({
-                            'name': student.name,
-                            'student_id': student.student_id,
-                            'confidence': f"{confidence:.2%}"
-                        })
+                        if not existing:
+                            # Mark attendance
+                            attendance = Attendance(
+                                student_id=student.id,
+                                confidence=f"{confidence:.2%}",
+                                image_path=str(face_path)
+                            )
+                            db.add(attendance)
+                            marked_students.append({
+                                'name': student.name,
+                                'student_id': student.student_id,
+                                'confidence': f"{confidence:.2%}"
+                            })
 
-        db.commit()
+            db.commit()
 
-        return jsonify({
-            'success': True,
-            'marked_students': marked_students,
-            'total_faces': len(faces)
-        })
+            return jsonify({
+                'success': True,
+                'marked_students': marked_students,
+                'total_faces': len(faces)
+            })
+        finally:
+            db.close()
 
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -665,14 +687,17 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                         if (current_time - last_seen).seconds < 30:
                             # Get student name for label
                             db = next(get_db())
-                            student = db.query(Student).filter(Student.student_id == student_id).first()
-                            student_name = student.name if student else student_id
-                            labels.append(f"{student_name} (Recent)")
+                            try:
+                                student = db.query(Student).filter(Student.student_id == student_id).first()
+                                student_name = student.name if student else student_id
+                                labels.append(f"{student_name} (Recent)")
+                            finally:
+                                db.close()
                             continue
 
                     # Mark attendance automatically with course schedule check
+                    db = next(get_db())
                     try:
-                        db = next(get_db())
                         student = db.query(Student).filter(Student.student_id == student_id).first()
                         print(f"Database lookup: student_id={student_id}, student_found={student is not None}")
 
@@ -736,6 +761,8 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                     except Exception as e:
                         print(f"Error marking attendance: {e}")
                         labels.append("Error")
+                    finally:
+                        db.close()
                 else:
                     labels.append("Unknown")
 
@@ -856,6 +883,8 @@ def delete_course(course_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 # Course Enrollment API Endpoints
 @app.route('/api/enrollments', methods=['GET'])
@@ -908,6 +937,8 @@ def create_enrollment():
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/enrollments/<int:enrollment_id>', methods=['DELETE'])
 def delete_enrollment(enrollment_id):
@@ -925,6 +956,8 @@ def delete_enrollment(enrollment_id):
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 # Admin Authentication Endpoints
 @app.route('/api/admin/login', methods=['POST'])
@@ -952,6 +985,8 @@ def admin_login():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 @app.route('/api/admin/create', methods=['POST'])
 def create_admin():
@@ -976,6 +1011,8 @@ def create_admin():
     except Exception as e:
         db.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+    finally:
+        db.close()
 
 # Data Export Endpoint
 @app.route('/api/export/attendance', methods=['GET'])
@@ -986,48 +1023,51 @@ def export_attendance():
     from flask import make_response
 
     db = next(get_db())
-    course_id = request.args.get('course_id')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    try:
+        course_id = request.args.get('course_id')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
 
-    query = db.query(Attendance)
+        query = db.query(Attendance)
 
-    if course_id:
-        query = query.filter(Attendance.course_id == course_id)
-    if start_date:
-        query = query.filter(Attendance.timestamp >= datetime.fromisoformat(start_date))
-    if end_date:
-        query = query.filter(Attendance.timestamp <= datetime.fromisoformat(end_date))
+        if course_id:
+            query = query.filter(Attendance.course_id == course_id)
+        if start_date:
+            query = query.filter(Attendance.timestamp >= datetime.fromisoformat(start_date))
+        if end_date:
+            query = query.filter(Attendance.timestamp <= datetime.fromisoformat(end_date))
 
-    records = query.order_by(Attendance.timestamp.desc()).all()
+        records = query.order_by(Attendance.timestamp.desc()).all()
 
-    # Create CSV
-    output = StringIO()
-    writer = csv.writer(output)
+        # Create CSV
+        output = StringIO()
+        writer = csv.writer(output)
 
-    # Write header
-    writer.writerow(['Student ID', 'Student Name', 'Course Code', 'Course Name',
-                     'Date', 'Time', 'Confidence', 'Status'])
+        # Write header
+        writer.writerow(['Student ID', 'Student Name', 'Course Code', 'Course Name',
+                         'Date', 'Time', 'Confidence', 'Status'])
 
-    # Write data
-    for record in records:
-        writer.writerow([
-            record.student.student_id if record.student else 'N/A',
-            record.student.name if record.student else 'N/A',
-            record.course.course_code if record.course else 'N/A',
-            record.course.course_name if record.course else 'N/A',
-            record.timestamp.strftime('%Y-%m-%d') if record.timestamp else 'N/A',
-            record.timestamp.strftime('%H:%M:%S') if record.timestamp else 'N/A',
-            record.confidence,
-            record.status
-        ])
+        # Write data
+        for record in records:
+            writer.writerow([
+                record.student.student_id if record.student else 'N/A',
+                record.student.name if record.student else 'N/A',
+                record.course.course_code if record.course else 'N/A',
+                record.course.course_name if record.course else 'N/A',
+                record.timestamp.strftime('%Y-%m-%d') if record.timestamp else 'N/A',
+                record.timestamp.strftime('%H:%M:%S') if record.timestamp else 'N/A',
+                record.confidence,
+                record.status
+            ])
 
-    # Create response
-    response = make_response(output.getvalue())
-    response.headers['Content-Type'] = 'text/csv'
-    response.headers['Content-Disposition'] = 'attachment; filename=attendance_export.csv'
+        # Create response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=attendance_export.csv'
 
-    return response
+        return response
+    finally:
+        db.close()
 
 @app.route('/api/video_feed')
 def video_feed():
