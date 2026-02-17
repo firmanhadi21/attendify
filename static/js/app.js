@@ -519,9 +519,10 @@ async function loadCoursesForAttendance() {
 }
 
 // Enumerate and load available cameras
+// Enumerate and load available cameras
 async function loadAvailableCameras() {
     try {
-        console.log('Enumerating cameras...');
+        console.log('Fetching available cameras from backend...');
         const select = document.getElementById('camera-select');
 
         if (!select) {
@@ -529,54 +530,68 @@ async function loadAvailableCameras() {
             return;
         }
 
-        // Request permissions first to get device labels
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            // Stop the stream immediately, we just needed permission
-            stream.getTracks().forEach(track => track.stop());
-        } catch (permError) {
-            console.warn('Camera permission denied:', permError);
-            select.innerHTML = '<option value="">Camera access denied - Please allow camera access</option>';
+        // Add loading state
+        select.innerHTML = '<option value="">Scanning cameras...</option>';
+
+        // Fetch cameras from backend API
+        const response = await fetch('/api/cameras');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to list cameras');
+        }
+
+        const cameras = data.cameras;
+        console.log('Backend returned cameras:', cameras);
+
+        if (cameras.length === 0) {
+            select.innerHTML = '<option value="">No cameras detected by server</option>';
             return;
         }
 
-        // Enumerate all media devices
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-        console.log('Found video devices:', videoDevices);
-
-        if (videoDevices.length === 0) {
-            select.innerHTML = '<option value="">No cameras detected</option>';
-            return;
-        }
-
-        // Store available cameras
-        availableCameras = videoDevices;
+        // Store available cameras (for reference if needed)
+        availableCameras = cameras;
 
         // Populate the select dropdown
         select.innerHTML = '<option value="">-- Select Camera --</option>';
 
-        videoDevices.forEach((device, index) => {
+        cameras.forEach(camera => {
             const option = document.createElement('option');
-            option.value = index;
-            option.dataset.deviceId = device.deviceId;
-            option.dataset.label = device.label || `Camera ${index}`;
-            option.textContent = device.label || `Camera ${index}`;
+            // Use the index from backend as the value
+            option.value = camera.index; 
+            option.dataset.backend = camera.backend;
+            option.dataset.label = camera.name;
+            
+            // Format label: "Camera 0 (1920x1080) - AVFoundation"
+            let label = `${camera.name} (${camera.resolution})`;
+            if (camera.index === 0) label += " [Default]";
+            
+            option.textContent = label;
             select.appendChild(option);
         });
 
         // Auto-select first camera if available
-        if (videoDevices.length > 0) {
-            select.selectedIndex = 1; // Select first camera (index 1 because index 0 is placeholder)
+        if (cameras.length > 0) {
+            select.selectedIndex = 1; // Select first camera
         }
 
-        console.log('Camera dropdown populated with', videoDevices.length, 'cameras');
+        console.log('Camera dropdown populated with', cameras.length, 'cameras');
+        
+        // Show hint about permissions if 0 cameras found (though we handle empty above)
+        if (cameras.length === 0) {
+            select.innerHTML = '<option value="">No cameras found - Check Server Permissions</option>';
+        }
+
     } catch (error) {
         console.error('Error loading cameras:', error);
         const select = document.getElementById('camera-select');
         if (select) {
-            select.innerHTML = '<option value="">Error loading cameras - Click to retry</option>';
+            select.innerHTML = '<option value="">Error loading cameras - Check backend console</option>';
         }
     }
 }

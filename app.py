@@ -25,6 +25,13 @@ CORS(app)
 face_detector = FaceDetector()
 face_recognizer = FaceRecognizer()
 
+# Import camera listing utility
+try:
+    from list_cameras import get_available_cameras
+except ImportError:
+    def get_available_cameras():
+        return []
+
 # Database session management decorator
 def with_db_session(f):
     """Decorator to ensure database session is properly closed"""
@@ -1077,6 +1084,19 @@ def video_feed():
     week_number = request.args.get('week', default=None, type=int)
     return Response(generate_frames(camera_index, course_id, week_number),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/cameras', methods=['GET'])
+def get_cameras_list():
+    """Get list of available cameras from backend"""
+    try:
+        available_cameras = get_available_cameras()
+        return jsonify({
+            'success': True,
+            'cameras': available_cameras,
+            'count': len(available_cameras)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Initialize database
