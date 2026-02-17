@@ -99,6 +99,13 @@
             <div class="enroll-section">
                 <!-- Live Camera Feed -->
                 <div class="camera-section">
+                    <div class="form-group" style="margin-bottom: 15px;">
+                        <label for="enroll-camera-select">Select Camera:</label>
+                        <select id="enroll-camera-select" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                            <option value="">Loading cameras...</option>
+                        </select>
+                    </div>
+
                     <div class="video-container">
                         <video id="enroll-video" autoplay playsinline></video>
                         <canvas id="enroll-canvas" style="display: none;"></canvas>

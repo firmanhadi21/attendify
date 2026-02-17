@@ -155,7 +155,7 @@ document.getElementById('student-form').addEventListener('submit', async (e) => 
         const enrollData = await enrollResponse.json();
 
         if (enrollData.success) {
-            const message = existingStudent 
+            const message = existingStudent
                 ? `Additional face angle for "${studentName}" enrolled successfully! You can enroll more angles for better recognition.`
                 : `Student "${studentName}" enrolled successfully! You can enroll additional angles for better recognition.`;
             showResult('enroll-result', message, 'success');
@@ -197,20 +197,79 @@ document.getElementById('back-to-camera-btn').addEventListener('click', async ()
 });
 
 // Webcam functions
+let enrollmentCamerasLoaded = false;
+
+async function loadEnrollmentCameras() {
+    if (enrollmentCamerasLoaded) return;
+
+    try {
+        const select = document.getElementById('enroll-camera-select');
+        if (!select) return;
+
+        // Request permission primarily
+        await navigator.mediaDevices.getUserMedia({ video: true });
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+        select.innerHTML = '';
+
+        if (videoDevices.length === 0) {
+            select.innerHTML = '<option value="">No cameras found</option>';
+            return;
+        }
+
+        videoDevices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.textContent = device.label || `Camera ${index + 1}`;
+            select.appendChild(option);
+        });
+
+        enrollmentCamerasLoaded = true;
+
+        // Listen for changes
+        select.addEventListener('change', () => {
+            stopEnrollWebcam();
+            startEnrollWebcam();
+        });
+
+    } catch (error) {
+        console.error('Error loading enrollment cameras:', error);
+        const select = document.getElementById('enroll-camera-select');
+        if (select) select.innerHTML = '<option value="">Camera access denied</option>';
+    }
+}
+
 async function startEnrollWebcam() {
-    // Don't start if already running
-    if (enrollStream) {
+    // Don't start if already running (unless we are switching cameras)
+    if (enrollStream && document.getElementById('enroll-video').srcObject) {
         return;
     }
 
     try {
-        console.log('Requesting camera access...');
-        enrollStream = await navigator.mediaDevices.getUserMedia({
+        // Load cameras first if not loaded
+        if (!enrollmentCamerasLoaded) {
+            await loadEnrollmentCameras();
+        }
+
+        const select = document.getElementById('enroll-camera-select');
+        const deviceId = select ? select.value : undefined;
+
+        console.log('Requesting camera access...', deviceId ? `Device: ${deviceId}` : 'Default');
+
+        const constraints = {
             video: {
                 width: { ideal: 1280 },
                 height: { ideal: 720 }
             }
-        });
+        };
+
+        if (deviceId) {
+            constraints.video.deviceId = { exact: deviceId };
+        }
+
+        enrollStream = await navigator.mediaDevices.getUserMedia(constraints);
 
         const videoElement = document.getElementById('enroll-video');
         const placeholder = document.getElementById('camera-placeholder');
@@ -246,7 +305,10 @@ async function startEnrollWebcam() {
                 <p style="margin-bottom: 20px; color: #ff6b6b;">${errorMsg}</p>
                 <button type="button" id="retry-camera" class="btn btn-primary">Retry</button>
             `;
-            document.getElementById('retry-camera').addEventListener('click', startEnrollWebcam);
+            document.getElementById('retry-camera').addEventListener('click', () => {
+                stopEnrollWebcam(); // clear state
+                startEnrollWebcam();
+            });
         }
     }
 }
@@ -482,7 +544,7 @@ async function loadCoursesForAttendance() {
 
         const response = await fetch('/api/courses', { signal: controller.signal });
         clearTimeout(timeoutId);
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -535,13 +597,13 @@ async function loadAvailableCameras() {
 
         // Fetch cameras from backend API
         const response = await fetch('/api/cameras');
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
-        
+
         if (!data.success) {
             throw new Error(data.error || 'Failed to list cameras');
         }
@@ -563,14 +625,14 @@ async function loadAvailableCameras() {
         cameras.forEach(camera => {
             const option = document.createElement('option');
             // Use the index from backend as the value
-            option.value = camera.index; 
+            option.value = camera.index;
             option.dataset.backend = camera.backend;
             option.dataset.label = camera.name;
-            
+
             // Format label: "Camera 0 (1920x1080) - AVFoundation"
             let label = `${camera.name} (${camera.resolution})`;
             if (camera.index === 0) label += " [Default]";
-            
+
             option.textContent = label;
             select.appendChild(option);
         });
@@ -581,7 +643,7 @@ async function loadAvailableCameras() {
         }
 
         console.log('Camera dropdown populated with', cameras.length, 'cameras');
-        
+
         // Show hint about permissions if 0 cameras found (though we handle empty above)
         if (cameras.length === 0) {
             select.innerHTML = '<option value="">No cameras found - Check Server Permissions</option>';
@@ -803,7 +865,7 @@ document.querySelectorAll('.admin-tab-btn').forEach(btn => {
         // Add active class to selected tab
         btn.classList.add('active');
         document.getElementById(`admin-${tabName}`).classList.add('active');
-        
+
         // Load data based on active tab
         if (tabName === 'import') {
             loadCoursesForImport();
@@ -922,7 +984,7 @@ async function loadCourses() {
     }
 }
 
-window.editCourse = async function(courseId) {
+window.editCourse = async function (courseId) {
     try {
         const response = await fetch('/api/courses');
         const courses = await response.json();
@@ -949,7 +1011,7 @@ window.editCourse = async function(courseId) {
     }
 };
 
-window.deleteCourse = async function(courseId) {
+window.deleteCourse = async function (courseId) {
     if (!confirm('Are you sure you want to delete this course?')) return;
 
     try {
@@ -1061,7 +1123,7 @@ async function loadStudentsAdmin() {
     }
 }
 
-window.editStudent = function(id, studentId, name, email, phone) {
+window.editStudent = function (id, studentId, name, email, phone) {
     document.getElementById('student-db-id').value = id;
     document.getElementById('student-id-input').value = studentId;
     document.getElementById('student-name-input').value = name;
@@ -1073,7 +1135,7 @@ window.editStudent = function(id, studentId, name, email, phone) {
     window.scrollTo(0, 0);
 };
 
-window.deleteStudent = async function(id, name) {
+window.deleteStudent = async function (id, name) {
     if (!confirm(`Are you sure you want to delete student "${name}"?\n\nThis will also delete:\n- All face photos\n- All enrollments\n- All attendance records`)) {
         return;
     }
@@ -1226,7 +1288,7 @@ async function loadEnrollments() {
     }
 }
 
-window.deleteEnrollment = async function(enrollmentId) {
+window.deleteEnrollment = async function (enrollmentId) {
     if (!confirm('Are you sure you want to remove this enrollment?')) return;
 
     try {
@@ -1349,9 +1411,9 @@ async function searchStudents() {
         console.log('Searching students with URL:', url);
         const response = await fetch(url);
         const data = await response.json();
-        
+
         console.log('Search response:', data);
-        
+
         if (data.success) {
             displayStudentResults(data.students);
         } else {
@@ -1383,11 +1445,11 @@ function displayStudentResults(students) {
     html += '</tr></thead><tbody>';
 
     students.forEach(student => {
-        const coursesText = student.courses.length > 0 
-            ? student.courses.map(c => c.code).join(', ') 
+        const coursesText = student.courses.length > 0
+            ? student.courses.map(c => c.code).join(', ')
             : 'Not enrolled';
-        const photoStatus = student.has_photo 
-            ? '<span style="color: green;">✅ Enrolled</span>' 
+        const photoStatus = student.has_photo
+            ? '<span style="color: green;">✅ Enrolled</span>'
             : '<span style="color: red;">❌ No photo</span>';
 
         html += '<tr>';
