@@ -50,8 +50,13 @@ last_detected_students = {}  # Track recently detected students to avoid duplica
 from datetime import datetime, timedelta
 
 def get_camera(camera_index=None):
-    """Get or initialize camera with specified index"""
+    """Get or initialize camera with specified index.
+
+    Retries a few times on macOS where AVFoundation may need
+    a moment after a previous release before re-opening.
+    """
     global cameras
+    import time
 
     if camera_index is None:
         camera_index = Config.CAMERA_INDEX
@@ -67,16 +72,26 @@ def get_camera(camera_index=None):
             cameras[camera_index].release()
             del cameras[camera_index]
 
-    # Create new camera instance
-    camera = cv2.VideoCapture(camera_index)
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, Config.FRAME_WIDTH)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, Config.FRAME_HEIGHT)
+    # Create new camera instance with retries for macOS AVFoundation
+    max_retries = 3
+    for attempt in range(max_retries):
+        camera = cv2.VideoCapture(camera_index)
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, Config.FRAME_WIDTH)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, Config.FRAME_HEIGHT)
 
-    if camera.isOpened():
-        cameras[camera_index] = camera
-        return camera
-    else:
-        return None
+        if camera.isOpened():
+            # Verify we can actually read a frame
+            ret, _ = camera.read()
+            if ret:
+                cameras[camera_index] = camera
+                return camera
+            else:
+                camera.release()
+
+        if attempt < max_retries - 1:
+            time.sleep(0.5)
+
+    return None
 
 def get_active_course(db):
     """Get currently active course based on current time and day"""
