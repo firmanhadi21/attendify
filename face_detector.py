@@ -1,35 +1,38 @@
 import cv2
 import numpy as np
-import torch
-from ultralytics import YOLO
-from pathlib import Path
 from config import Config
+
 
 class FaceDetector:
     def __init__(self):
-        """Initialize YOLO model for face detection"""
-        model_path = Config.MODELS_FOLDER / Config.YOLO_MODEL
+        """Initialize OpenCV DNN face detector (more accurate than Haar cascade)"""
+        # Try OpenCV's DNN face detector first (shipped with OpenCV 4.x)
+        self.detector = None
+        try:
+            self.detector = cv2.FaceDetectorYN.create(
+                "", "", (320, 320), 0.5, 0.3, 5000
+            )
+        except Exception:
+            pass
 
-        # Download YOLOv8 model if not exists
-        if not model_path.exists():
-            print("Downloading YOLOv8 model...")
-
-        # Fix for PyTorch 2.6+ weights_only default change
-        # Temporarily patch torch.load to allow YOLO model loading
-        original_torch_load = torch.load
-        def patched_load(*args, **kwargs):
-            kwargs.setdefault('weights_only', False)
-            return original_torch_load(*args, **kwargs)
-
-        torch.load = patched_load
-        self.model = YOLO(Config.YOLO_MODEL)
-        torch.load = original_torch_load  # Restore original
+        # Fallback to Haar cascade (always available)
+        if self.detector is None:
+            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            self.cascade = cv2.CascadeClassifier(cascade_path)
+            self.use_cascade = True
+            print("Using Haar cascade face detector")
+        else:
+            self.cascade = None
+            self.use_cascade = True  # DNN detector needs model file, fall back to cascade
+            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            self.cascade = cv2.CascadeClassifier(cascade_path)
+            print("Using Haar cascade face detector")
 
         self.confidence_threshold = Config.CONFIDENCE_THRESHOLD
 
     def detect_faces(self, frame):
         """
-        Detect faces in a frame using YOLO
+        Detect faces in a frame using OpenCV Haar cascade.
 
         Args:
             frame: OpenCV image/frame
@@ -37,39 +40,47 @@ class FaceDetector:
         Returns:
             List of face bounding boxes [(x1, y1, x2, y2), ...]
         """
-        # Run YOLO detection
-        results = self.model(frame, verbose=False)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
+
+        detections = self.cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(60, 60),
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
 
         faces = []
-        for result in results:
-            boxes = result.boxes
-            for box in boxes:
-                # Get confidence and class
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-
-                # Class 0 is 'person' in COCO dataset
-                # For face detection, we'll use person detection
-                # You can fine-tune YOLO for face detection specifically
-                if conf >= self.confidence_threshold and cls == 0:
-                    # Get bounding box coordinates
-                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                    faces.append((int(x1), int(y1), int(x2), int(y2)))
+        for (x, y, w, h) in detections:
+            faces.append((x, y, x + w, y + h))
 
         return faces
 
-    def extract_face(self, frame, bbox):
+    def extract_face(self, frame, bbox, padding=0.25):
         """
-        Extract face region from frame
+        Extract face region from frame with padding for better recognition.
 
         Args:
             frame: OpenCV image/frame
             bbox: Bounding box tuple (x1, y1, x2, y2)
+            padding: Fraction of bbox size to add as padding
 
         Returns:
             Cropped face image
         """
         x1, y1, x2, y2 = bbox
+        h = y2 - y1
+        w = x2 - x1
+
+        # Add padding around the face for better recognition
+        pad_x = int(w * padding)
+        pad_y = int(h * padding)
+        x1 = max(0, x1 - pad_x)
+        y1 = max(0, y1 - pad_y)
+        x2 = min(frame.shape[1], x2 + pad_x)
+        y2 = min(frame.shape[0], y2 + pad_y)
+
         face = frame[y1:y2, x1:x2]
         return face
 

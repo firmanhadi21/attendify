@@ -32,9 +32,12 @@
             <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
                 <div class="form-group">
                     <label for="camera-select">Select Camera:</label>
-                    <select id="camera-select" style="width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
-                        <option value="">Detecting cameras...</option>
-                    </select>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="camera-select" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px;">
+                            <option value="">Detecting cameras...</option>
+                        </select>
+                        <button type="button" id="refresh-cameras" class="btn btn-secondary" style="white-space: nowrap;" title="Rescan cameras">&#x21bb; Refresh</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="course-session-select">Select Course Session:</label>
@@ -101,13 +104,16 @@
                 <div class="camera-section">
                     <div class="form-group" style="margin-bottom: 15px;">
                         <label for="enroll-camera-select">Select Camera:</label>
-                        <select id="enroll-camera-select" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-                            <option value="">Loading cameras...</option>
-                        </select>
+                        <div style="display: flex; gap: 8px;">
+                            <select id="enroll-camera-select" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                                <option value="">Loading cameras...</option>
+                            </select>
+                            <button type="button" id="refresh-enroll-cameras" class="btn btn-secondary" style="white-space: nowrap;" title="Rescan cameras">&#x21bb; Refresh</button>
+                        </div>
                     </div>
 
                     <div class="video-container">
-                        <video id="enroll-video" autoplay playsinline></video>
+                        <img id="enroll-video" style="display: none; width: 100%;" alt="Camera preview">
                         <canvas id="enroll-canvas" style="display: none;"></canvas>
                         <div id="camera-placeholder" style="display: flex; align-items: center; justify-content: center; background: #000; min-height: 400px; color: #fff; flex-direction: column;">
                             <p style="margin-bottom: 20px;">Camera will start automatically...</p>
@@ -200,7 +206,6 @@
             </div>
             <div id="attendance-list" class="attendance-table"></div>
         </div>
-    </div>
 
         <!-- Admin Tab -->
         <div id="admin-tab" class="tab-content">
@@ -330,7 +335,7 @@
                     <!-- Student Form (hidden by default) -->
                     <div id="student-form-section" style="display: none; background: #f5f5f5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                         <h4 id="student-form-title">Add New Student</h4>
-                        <form id="student-form">
+                        <form id="admin-student-form">
                             <input type="hidden" id="student-db-id">
                             <div class="form-group">
                                 <label for="student-id-input">Student ID:</label>
@@ -348,6 +353,46 @@
                                 <label for="student-phone-input">Phone:</label>
                                 <input type="tel" id="student-phone-input">
                             </div>
+                            <div class="form-group">
+                                <label for="student-course-select">Enroll in Course (optional):</label>
+                                <select id="student-course-select">
+                                    <option value="">-- No course enrollment --</option>
+                                </select>
+                            </div>
+
+                            <!-- Face Photo Section -->
+                            <div class="form-group">
+                                <label>Face Photo (optional):</label>
+                                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                                    <button type="button" id="admin-capture-btn" class="btn btn-secondary">Capture from Camera</button>
+                                    <button type="button" id="admin-upload-toggle-btn" class="btn btn-secondary">Upload Photo</button>
+                                </div>
+                                <!-- Camera capture area -->
+                                <div id="admin-camera-section" style="display: none; margin-bottom: 10px;">
+                                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                                        <select id="admin-camera-select" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                                            <option value="">Loading cameras...</option>
+                                        </select>
+                                        <button type="button" id="admin-refresh-cameras" class="btn btn-secondary" style="white-space: nowrap;">&#x21bb;</button>
+                                    </div>
+                                    <img id="admin-camera-feed" style="display: none; width: 100%; max-width: 400px; border-radius: 8px;" alt="Camera preview">
+                                    <div style="margin-top: 8px;">
+                                        <button type="button" id="admin-take-photo-btn" class="btn btn-primary">Take Photo</button>
+                                        <button type="button" id="admin-stop-camera-btn" class="btn btn-secondary">Close Camera</button>
+                                    </div>
+                                </div>
+                                <!-- Upload area -->
+                                <div id="admin-upload-section" style="display: none; margin-bottom: 10px;">
+                                    <input type="file" id="admin-face-upload" accept="image/*">
+                                </div>
+                                <!-- Preview -->
+                                <div id="admin-photo-preview" style="display: none; margin-top: 10px;">
+                                    <img id="admin-preview-image" style="max-width: 200px; border-radius: 8px;" alt="Face photo">
+                                    <br>
+                                    <button type="button" id="admin-remove-photo-btn" class="btn btn-secondary" style="margin-top: 5px;">Remove Photo</button>
+                                </div>
+                            </div>
+
                             <button type="submit" class="btn btn-primary" id="save-student-btn">Save Student</button>
                             <button type="button" class="btn btn-secondary" id="cancel-student-btn">Cancel</button>
                         </form>

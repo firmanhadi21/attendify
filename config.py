@@ -33,7 +33,7 @@ class Config:
     # Face Detection & Recognition Settings
     YOLO_MODEL = 'yolov8n.pt'  # YOLOv8 nano model for speed
     CONFIDENCE_THRESHOLD = 0.5
-    FACE_RECOGNITION_THRESHOLD = 0.9  # DeepFace cosine distance threshold (higher = more lenient, works with multiple angles/lighting)
+    FACE_RECOGNITION_THRESHOLD = 0.30  # DeepFace Facenet512 cosine distance threshold (0.30 = standard, lower = stricter)
 
     # Camera Settings
     CAMERA_INDEX = int(os.getenv('CAMERA_INDEX', '0'))

@@ -4,6 +4,8 @@ let capturedPhotoBlob = null;
 let currentCourseId = null;
 let currentCourseName = '';
 let liveAttendanceInterval = null;
+let adminPhotoBlob = null;
+let adminCameraActive = false;
 
 // Timezone helper - Convert UTC to UTC+7 (Jakarta/Bangkok timezone)
 function formatTimeUTC7(timestamp) {
@@ -199,51 +201,62 @@ document.getElementById('back-to-camera-btn').addEventListener('click', async ()
 // Webcam functions
 let enrollmentCamerasLoaded = false;
 
-async function loadEnrollmentCameras() {
-    if (enrollmentCamerasLoaded) return;
+async function loadEnrollmentCameras(refresh = false) {
+    if (enrollmentCamerasLoaded && !refresh) return;
+
+    const select = document.getElementById('enroll-camera-select');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Scanning cameras...</option>';
 
     try {
-        const select = document.getElementById('enroll-camera-select');
-        if (!select) return;
+        const url = refresh ? '/api/cameras?refresh=true' : '/api/cameras';
+        const response = await fetch(url);
+        const data = await response.json();
 
-        // Request permission primarily
-        await navigator.mediaDevices.getUserMedia({ video: true });
-
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-        select.innerHTML = '';
-
-        if (videoDevices.length === 0) {
+        if (!data.success || data.cameras.length === 0) {
             select.innerHTML = '<option value="">No cameras found</option>';
             return;
         }
 
-        videoDevices.forEach((device, index) => {
+        select.innerHTML = '';
+        data.cameras.forEach(camera => {
             const option = document.createElement('option');
-            option.value = device.deviceId;
-            option.textContent = device.label || `Camera ${index + 1}`;
+            option.value = camera.index;
+            let label = `${camera.name} (${camera.resolution})`;
+            if (camera.index === 0) label += ' [Default]';
+            option.textContent = label;
             select.appendChild(option);
         });
 
+        if (!enrollmentCamerasLoaded) {
+            // Listen for changes (only bind once)
+            select.addEventListener('change', () => {
+                stopEnrollWebcam();
+                startEnrollWebcam();
+            });
+        }
         enrollmentCamerasLoaded = true;
-
-        // Listen for changes
-        select.addEventListener('change', () => {
-            stopEnrollWebcam();
-            startEnrollWebcam();
-        });
 
     } catch (error) {
         console.error('Error loading enrollment cameras:', error);
-        const select = document.getElementById('enroll-camera-select');
-        if (select) select.innerHTML = '<option value="">Camera access denied</option>';
+        select.innerHTML = '<option value="">Error loading cameras</option>';
     }
 }
 
+// Refresh buttons for camera lists
+document.getElementById('refresh-enroll-cameras').addEventListener('click', async () => {
+    await loadEnrollmentCameras(true);
+    stopEnrollWebcam();
+    enrollStream = null;
+    await startEnrollWebcam();
+});
+
 async function startEnrollWebcam() {
-    // Don't start if already running (unless we are switching cameras)
-    if (enrollStream && document.getElementById('enroll-video').srcObject) {
+    const videoElement = document.getElementById('enroll-video');
+
+    // Don't start if already showing the feed
+    if (enrollStream) {
         return;
     }
 
@@ -254,116 +267,74 @@ async function startEnrollWebcam() {
         }
 
         const select = document.getElementById('enroll-camera-select');
-        const deviceId = select ? select.value : undefined;
+        const cameraIndex = select ? parseInt(select.value) || 0 : 0;
 
-        console.log('Requesting camera access...', deviceId ? `Device: ${deviceId}` : 'Default');
+        console.log('Starting backend camera feed for index:', cameraIndex);
 
-        const constraints = {
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        };
+        // Use backend video feed (works with all cameras including iPhone)
+        videoElement.src = `/api/enroll_video_feed?camera=${cameraIndex}`;
+        enrollStream = true;
 
-        if (deviceId) {
-            constraints.video.deviceId = { exact: deviceId };
-        }
-
-        enrollStream = await navigator.mediaDevices.getUserMedia(constraints);
-
-        const videoElement = document.getElementById('enroll-video');
         const placeholder = document.getElementById('camera-placeholder');
-
-        videoElement.srcObject = enrollStream;
-        console.log('Camera started successfully');
-
-        // Hide placeholder and show video
         if (placeholder) {
             placeholder.style.display = 'none';
         }
         videoElement.style.display = 'block';
+        console.log('Camera feed started successfully');
     } catch (error) {
         console.error('Camera error:', error);
-        let errorMsg = 'Camera access denied. ';
-
-        if (error.name === 'NotAllowedError') {
-            errorMsg += 'Please allow camera access in your browser settings.';
-        } else if (error.name === 'NotFoundError') {
-            errorMsg += 'No camera found. Please connect a webcam.';
-        } else if (error.name === 'NotReadableError') {
-            errorMsg += 'Camera is already in use by another application.';
-        } else {
-            errorMsg += error.message;
-        }
-
-        showResult('enroll-result', errorMsg, 'error');
-
-        // Update placeholder with error
-        const placeholder = document.getElementById('camera-placeholder');
-        if (placeholder) {
-            placeholder.innerHTML = `
-                <p style="margin-bottom: 20px; color: #ff6b6b;">${errorMsg}</p>
-                <button type="button" id="retry-camera" class="btn btn-primary">Retry</button>
-            `;
-            document.getElementById('retry-camera').addEventListener('click', () => {
-                stopEnrollWebcam(); // clear state
-                startEnrollWebcam();
-            });
-        }
+        showResult('enroll-result', 'Failed to start camera feed: ' + error.message, 'error');
     }
 }
 
 function stopEnrollWebcam() {
     if (enrollStream) {
-        console.log('Stopping camera...');
-        enrollStream.getTracks().forEach(track => track.stop());
-        enrollStream = null;
-
+        console.log('Stopping camera feed...');
         const videoElement = document.getElementById('enroll-video');
-        videoElement.srcObject = null;
+        videoElement.src = '';
+        videoElement.style.display = 'none';
+        enrollStream = null;
     }
 }
 
 // Capture photo from webcam
-document.getElementById('capture-photo-btn').addEventListener('click', () => {
-    const video = document.getElementById('enroll-video');
-    const canvas = document.getElementById('enroll-canvas');
+document.getElementById('capture-photo-btn').addEventListener('click', async () => {
     const preview = document.getElementById('preview-image');
+    const select = document.getElementById('enroll-camera-select');
+    const cameraIndex = select ? parseInt(select.value) || 0 : 0;
 
-    // Set canvas size to match video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    try {
+        // Capture frame from backend camera
+        const response = await fetch(`/api/capture_frame?camera=${cameraIndex}`);
+        if (!response.ok) {
+            throw new Error('Failed to capture frame');
+        }
 
-    // Draw video frame to canvas
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Convert canvas to blob and show preview
-    canvas.toBlob((blob) => {
-        capturedPhotoBlob = blob;
-        preview.src = URL.createObjectURL(blob);
+        capturedPhotoBlob = await response.blob();
+        preview.src = URL.createObjectURL(capturedPhotoBlob);
         document.getElementById('captured-preview').style.display = 'block';
         document.getElementById('capture-photo-btn').style.display = 'none';
         document.getElementById('retake-photo-btn').style.display = 'inline-block';
 
         // Stop video stream
         stopEnrollWebcam();
-        video.style.display = 'none';
 
         showResult('enroll-result', 'Photo captured! Fill in details and click "Enroll Student".', 'success');
-    }, 'image/jpeg', 0.95);
+    } catch (error) {
+        console.error('Capture error:', error);
+        showResult('enroll-result', 'Failed to capture photo: ' + error.message, 'error');
+    }
 });
 
 // Retake photo
 document.getElementById('retake-photo-btn').addEventListener('click', async () => {
-    const video = document.getElementById('enroll-video');
     document.getElementById('captured-preview').style.display = 'none';
     document.getElementById('capture-photo-btn').style.display = 'inline-block';
     document.getElementById('retake-photo-btn').style.display = 'none';
-    video.style.display = 'block';
     capturedPhotoBlob = null;
 
-    // Restart webcam
+    // Restart camera feed
+    enrollStream = null;
     await startEnrollWebcam();
 });
 
@@ -582,7 +553,7 @@ async function loadCoursesForAttendance() {
 
 // Enumerate and load available cameras
 // Enumerate and load available cameras
-async function loadAvailableCameras() {
+async function loadAvailableCameras(refresh = false) {
     try {
         console.log('Fetching available cameras from backend...');
         const select = document.getElementById('camera-select');
@@ -596,7 +567,8 @@ async function loadAvailableCameras() {
         select.innerHTML = '<option value="">Scanning cameras...</option>';
 
         // Fetch cameras from backend API
-        const response = await fetch('/api/cameras');
+        const url = refresh ? '/api/cameras?refresh=true' : '/api/cameras';
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -657,6 +629,10 @@ async function loadAvailableCameras() {
         }
     }
 }
+
+document.getElementById('refresh-cameras')?.addEventListener('click', () => {
+    loadAvailableCameras(true);
+});
 
 // Start attendance session with selected camera and course
 document.getElementById('start-attendance-btn')?.addEventListener('click', () => {
@@ -1033,19 +1009,149 @@ window.deleteCourse = async function (courseId) {
 // ===== STUDENT MANAGEMENT =====
 
 document.getElementById('add-student-btn').addEventListener('click', () => {
-    document.getElementById('student-form').reset();
+    document.getElementById('admin-student-form').reset();
     document.getElementById('student-db-id').value = '';
     document.getElementById('student-form-title').textContent = 'Add New Student';
     document.getElementById('save-student-btn').textContent = 'Save Student';
+    resetAdminPhoto();
+    loadCoursesForStudentForm();
     document.getElementById('student-form-section').style.display = 'block';
 });
 
+async function loadCoursesForStudentForm() {
+    const select = document.getElementById('student-course-select');
+    try {
+        const response = await fetch('/api/courses');
+        const data = await response.json();
+        select.innerHTML = '<option value="">-- No course enrollment --</option>';
+        if (data.courses) {
+            data.courses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.id;
+                option.textContent = `${course.course_code} - ${course.course_name}`;
+                select.appendChild(option);
+            });
+        }
+    } catch {
+        select.innerHTML = '<option value="">-- No course enrollment --</option>';
+    }
+}
+
 document.getElementById('cancel-student-btn').addEventListener('click', () => {
     document.getElementById('student-form-section').style.display = 'none';
-    document.getElementById('student-form').reset();
+    document.getElementById('admin-student-form').reset();
+    resetAdminPhoto();
 });
 
-document.getElementById('student-form').addEventListener('submit', async (e) => {
+// ===== ADMIN FACE PHOTO =====
+
+function resetAdminPhoto() {
+    adminPhotoBlob = null;
+    stopAdminCamera();
+    document.getElementById('admin-camera-section').style.display = 'none';
+    document.getElementById('admin-upload-section').style.display = 'none';
+    document.getElementById('admin-photo-preview').style.display = 'none';
+    const fileInput = document.getElementById('admin-face-upload');
+    if (fileInput) fileInput.value = '';
+}
+
+function stopAdminCamera() {
+    if (adminCameraActive) {
+        const feed = document.getElementById('admin-camera-feed');
+        feed.src = '';
+        feed.style.display = 'none';
+        adminCameraActive = false;
+    }
+}
+
+async function startAdminCamera() {
+    const select = document.getElementById('admin-camera-select');
+    const cameraIndex = select ? parseInt(select.value) || 0 : 0;
+    const feed = document.getElementById('admin-camera-feed');
+    feed.src = `/api/enroll_video_feed?camera=${cameraIndex}`;
+    feed.style.display = 'block';
+    adminCameraActive = true;
+}
+
+async function loadAdminCameras(refresh = false) {
+    const select = document.getElementById('admin-camera-select');
+    select.innerHTML = '<option value="">Scanning cameras...</option>';
+    try {
+        const url = refresh ? '/api/cameras?refresh=true' : '/api/cameras';
+        const response = await fetch(url);
+        const data = await response.json();
+        select.innerHTML = '';
+        if (data.cameras && data.cameras.length > 0) {
+            data.cameras.forEach(cam => {
+                const option = document.createElement('option');
+                option.value = cam.index;
+                option.textContent = cam.name || `Camera ${cam.index}`;
+                select.appendChild(option);
+            });
+        } else {
+            select.innerHTML = '<option value="0">Default Camera</option>';
+        }
+    } catch {
+        select.innerHTML = '<option value="0">Default Camera</option>';
+    }
+}
+
+document.getElementById('admin-capture-btn').addEventListener('click', async () => {
+    document.getElementById('admin-upload-section').style.display = 'none';
+    document.getElementById('admin-camera-section').style.display = 'block';
+    await loadAdminCameras();
+    await startAdminCamera();
+});
+
+document.getElementById('admin-upload-toggle-btn').addEventListener('click', () => {
+    stopAdminCamera();
+    document.getElementById('admin-camera-section').style.display = 'none';
+    document.getElementById('admin-upload-section').style.display = 'block';
+});
+
+document.getElementById('admin-refresh-cameras').addEventListener('click', async () => {
+    await loadAdminCameras(true);
+    if (adminCameraActive) {
+        stopAdminCamera();
+        await startAdminCamera();
+    }
+});
+
+document.getElementById('admin-take-photo-btn').addEventListener('click', async () => {
+    const select = document.getElementById('admin-camera-select');
+    const cameraIndex = select ? parseInt(select.value) || 0 : 0;
+    try {
+        const response = await fetch(`/api/capture_frame?camera=${cameraIndex}`);
+        if (!response.ok) throw new Error('Failed to capture frame');
+        adminPhotoBlob = await response.blob();
+        document.getElementById('admin-preview-image').src = URL.createObjectURL(adminPhotoBlob);
+        document.getElementById('admin-photo-preview').style.display = 'block';
+        stopAdminCamera();
+        document.getElementById('admin-camera-section').style.display = 'none';
+    } catch (error) {
+        showResult('student-form-result', 'Failed to capture photo: ' + error.message, 'error');
+    }
+});
+
+document.getElementById('admin-stop-camera-btn').addEventListener('click', () => {
+    stopAdminCamera();
+    document.getElementById('admin-camera-section').style.display = 'none';
+});
+
+document.getElementById('admin-face-upload').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        adminPhotoBlob = file;
+        document.getElementById('admin-preview-image').src = URL.createObjectURL(file);
+        document.getElementById('admin-photo-preview').style.display = 'block';
+    }
+});
+
+document.getElementById('admin-remove-photo-btn').addEventListener('click', () => {
+    resetAdminPhoto();
+});
+
+document.getElementById('admin-student-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const dbId = document.getElementById('student-db-id').value;
@@ -1069,8 +1175,52 @@ document.getElementById('student-form').addEventListener('submit', async (e) => 
         const data = await response.json();
 
         if (data.success) {
-            showResult('student-form-result', `Student ${dbId ? 'updated' : 'created'} successfully!`, 'success');
-            document.getElementById('student-form').reset();
+            const studentDbId = dbId || data.student.id;
+            const fileInput = document.getElementById('admin-face-upload');
+            const photoToUpload = adminPhotoBlob || (fileInput && fileInput.files[0]);
+            const messages = [];
+
+            // Enroll face if a photo was provided
+            if (photoToUpload) {
+                const formData = new FormData();
+                formData.append('image', photoToUpload, 'face_photo.jpg');
+
+                const enrollResponse = await fetch(`/api/students/${studentDbId}/enroll`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const enrollData = await enrollResponse.json();
+
+                if (enrollData.success) {
+                    messages.push('face enrolled');
+                } else {
+                    showResult('student-form-result', `Student saved but face enrollment failed: ${enrollData.error}`, 'error');
+                }
+            }
+
+            // Enroll in course if selected
+            const courseId = document.getElementById('student-course-select').value;
+            if (courseId) {
+                try {
+                    const courseResponse = await fetch('/api/enrollments', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ student_id: studentDbId, course_id: parseInt(courseId) })
+                    });
+                    const courseData = await courseResponse.json();
+                    if (courseData.success) {
+                        messages.push('enrolled in course');
+                    } else {
+                        messages.push(`course enrollment failed: ${courseData.error}`);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            const summary = messages.length > 0 ? ` (${messages.join(', ')})` : '';
+            showResult('student-form-result', `Student ${dbId ? 'updated' : 'created'} successfully${summary}!`, 'success');
+
+            document.getElementById('admin-student-form').reset();
+            resetAdminPhoto();
             document.getElementById('student-form-section').style.display = 'none';
             loadStudentsAdmin();
         } else {

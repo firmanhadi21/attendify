@@ -1,4 +1,6 @@
 import os
+import time
+import threading
 import cv2
 import base64
 import io
@@ -49,6 +51,18 @@ cameras = {}  # Dictionary to store multiple camera instances
 last_detected_students = {}  # Track recently detected students to avoid duplicates
 from datetime import datetime, timedelta
 
+# Feeds run on separate request threads and share VideoCapture objects.
+# Concurrent read() on one device crashes macOS AVFoundation (native abort,
+# no Python traceback), so reads are serialized per camera, and opening is
+# serialized so two threads can't open the same device at once.
+camera_open_lock = threading.Lock()
+camera_read_locks = {}  # id(VideoCapture) -> Lock
+
+def read_frame(cam):
+    """Thread-safe cam.read() for cameras returned by get_camera()"""
+    with camera_read_locks[id(cam)]:
+        return cam.read()
+
 def get_camera(camera_index=None):
     """Get or initialize camera with specified index"""
     global cameras
@@ -58,25 +72,35 @@ def get_camera(camera_index=None):
 
     camera_index = int(camera_index)
 
-    # If camera already exists and is opened, return it
-    if camera_index in cameras and cameras[camera_index] is not None:
-        if cameras[camera_index].isOpened():
-            return cameras[camera_index]
-        else:
-            # Camera was closed, remove it
-            cameras[camera_index].release()
+    with camera_open_lock:
+        # If camera already exists and is opened, return it
+        if camera_index in cameras and cameras[camera_index] is not None:
+            existing = cameras[camera_index]
+            if existing.isOpened():
+                return existing
+            # Camera was closed, remove it (wait for any in-flight read)
+            with camera_read_locks[id(existing)]:
+                existing.release()
             del cameras[camera_index]
 
-    # Create new camera instance
-    camera = cv2.VideoCapture(camera_index)
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, Config.FRAME_WIDTH)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, Config.FRAME_HEIGHT)
+        # Create new camera instance - use native resolution to avoid black frames
+        # on macOS AVFoundation when forcing unsupported resolutions
+        camera = cv2.VideoCapture(camera_index)
 
-    if camera.isOpened():
-        cameras[camera_index] = camera
-        return camera
-    else:
-        return None
+        if camera.isOpened():
+            # Warm up: read and discard frames until we get a non-black one
+            # (camera isn't shared yet, so no read lock needed)
+            warmup_deadline = time.time() + 3.0
+            while time.time() < warmup_deadline:
+                success, frame = camera.read()
+                if success and frame is not None and frame.mean() > 5:
+                    break
+                time.sleep(0.05)
+            camera_read_locks[id(camera)] = threading.Lock()
+            cameras[camera_index] = camera
+            return camera
+        else:
+            return None
 
 def get_active_course(db):
     """Get currently active course based on current time and day"""
@@ -128,8 +152,8 @@ def create_student():
         student = Student(
             student_id=data['student_id'],
             name=data['name'],
-            email=data.get('email'),
-            phone=data.get('phone')
+            email=data.get('email') or None,
+            phone=data.get('phone') or None
         )
         db.add(student)
         db.commit()
@@ -161,17 +185,26 @@ def enroll_student_face(student_id):
         student_folder.mkdir(parents=True, exist_ok=True)
 
         image_path = student_folder / f"{student.student_id}_enrollment.jpg"
-        image_file.save(str(image_path))
+
+        # Enroll from a staging file so a rejected photo does not overwrite the
+        # student's existing enrollment image
+        pending_path = student_folder / f"{student.student_id}_enrollment.pending.jpg"
+        image_file.save(str(pending_path))
 
         # Enroll face
-        success = face_recognizer.enroll_face(student.student_id, image_path)
+        success, enroll_error = face_recognizer.enroll_face(
+            student.student_id, pending_path, stored_image_path=image_path
+        )
 
         if success:
+            os.replace(str(pending_path), str(image_path))
             student.face_encoding_path = str(image_path)
             db.commit()
             return jsonify({'success': True, 'message': 'Face enrolled successfully'})
         else:
-            return jsonify({'success': False, 'error': 'Failed to enroll face'}), 400
+            if pending_path.exists():
+                pending_path.unlink()
+            return jsonify({'success': False, 'error': enroll_error or 'Failed to enroll face'}), 400
 
     except Exception as e:
         db.rollback()
@@ -206,9 +239,9 @@ def update_student(student_db_id):
         if 'name' in data:
             student.name = data['name']
         if 'email' in data:
-            student.email = data['email']
+            student.email = data['email'] or None
         if 'phone' in data:
-            student.phone = data['phone']
+            student.phone = data['phone'] or None
 
         db.commit()
         return jsonify({'success': True, 'student': student.to_dict()})
@@ -659,7 +692,7 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
     frame_count = 0
 
     while True:
-        success, frame = cam.read()
+        success, frame = read_frame(cam)
         if not success:
             break
 
@@ -692,24 +725,16 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                     if student_id in last_detected_students:
                         last_seen = last_detected_students[student_id]
                         if (current_time - last_seen).seconds < 30:
-                            # Get student name for label
-                            db = next(get_db())
-                            try:
-                                student = db.query(Student).filter(Student.student_id == student_id).first()
-                                student_name = student.name if student else student_id
-                                labels.append(f"{student_name} (Recent)")
-                            finally:
-                                db.close()
+                            labels.append("Recent")
                             continue
 
                     # Mark attendance automatically with course schedule check
                     db = next(get_db())
                     try:
                         student = db.query(Student).filter(Student.student_id == student_id).first()
-                        print(f"Database lookup: student_id={student_id}, student_found={student is not None}")
+                        print(f"[ATTEND] student_id={student_id}, found={student is not None}, course_id={course_id}")
 
                         if student:
-                            print(f"Student found: {student.name} (ID: {student.student_id})")
                             # Use provided course_id or auto-detect based on time
                             if course_id:
                                 # Use selected course from UI
@@ -719,7 +744,7 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                                 active_course = get_active_course(db)
 
                             if not active_course:
-                                # No active course selected or detected
+                                print(f"[ATTEND] {student.name}: NO ACTIVE COURSE")
                                 labels.append(f"{student.name} (No Session)")
                                 last_detected_students[student_id] = current_time
                                 continue
@@ -731,7 +756,7 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                             ).first()
 
                             if not enrollment:
-                                # Student not enrolled in this course
+                                print(f"[ATTEND] {student.name} (db_id={student.id}): NOT ENROLLED in {active_course.course_code} (course_id={active_course.id})")
                                 labels.append(f"{student.name} (Not Enrolled)")
                                 last_detected_students[student_id] = current_time
                                 continue
@@ -761,12 +786,16 @@ def generate_frames(camera_index=None, course_id=None, week_number=None):
                                 labels.append(f"{student.name} ✓")
                                 print(f"✓ Attendance marked: {student.name} for {active_course.course_code} ({confidence:.2%})")
                             else:
+                                print(f"[ATTEND] {student.name}: ALREADY MARKED today")
                                 labels.append(f"{student.name} (Done)")
                                 last_detected_students[student_id] = current_time
                         else:
+                            print(f"[ATTEND] student_id={student_id}: NOT IN DATABASE")
                             labels.append("Unknown")
                     except Exception as e:
-                        print(f"Error marking attendance: {e}")
+                        print(f"[ATTEND] ERROR: {e}")
+                        import traceback
+                        traceback.print_exc()
                         labels.append("Error")
                     finally:
                         db.close()
@@ -1085,11 +1114,63 @@ def video_feed():
     return Response(generate_frames(camera_index, course_id, week_number),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/api/enroll_video_feed')
+def enroll_video_feed():
+    """Video streaming route for enrollment preview (no face detection)"""
+    camera_index = request.args.get('camera', default=Config.CAMERA_INDEX, type=int)
+
+    def generate_preview(camera_index):
+        cam = get_camera(camera_index)
+        if cam is None:
+            error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(error_frame, f'Camera {camera_index} not available', (50, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            ret, buffer = cv2.imencode('.jpg', error_frame)
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            return
+
+        while True:
+            success, frame = read_frame(cam)
+            if not success:
+                break
+            # Mirror the frame for a natural selfie view
+            frame = cv2.flip(frame, 1)
+            ret, buffer = cv2.imencode('.jpg', frame)
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            time.sleep(0.033)  # ~30fps cap to avoid starving the camera
+
+    return Response(generate_preview(camera_index),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/api/capture_frame')
+def capture_frame():
+    """Capture a single frame from the specified camera for enrollment"""
+    camera_index = request.args.get('camera', default=Config.CAMERA_INDEX, type=int)
+    cam = get_camera(camera_index)
+    if cam is None:
+        return jsonify({'success': False, 'error': f'Camera {camera_index} not available'}), 400
+
+    success, frame = read_frame(cam)
+    if not success:
+        return jsonify({'success': False, 'error': 'Failed to capture frame'}), 500
+
+    # Mirror to match the preview
+    frame = cv2.flip(frame, 1)
+    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    if not ret:
+        return jsonify({'success': False, 'error': 'Failed to encode frame'}), 500
+
+    return Response(buffer.tobytes(), mimetype='image/jpeg')
+
 @app.route('/api/cameras', methods=['GET'])
 def get_cameras_list():
     """Get list of available cameras from backend"""
     try:
-        available_cameras = get_available_cameras()
+        force_refresh = request.args.get('refresh', default='false').lower() == 'true'
+        available_cameras = get_available_cameras(force_refresh=force_refresh, active_cameras=cameras)
         return jsonify({
             'success': True,
             'cameras': available_cameras,
@@ -1101,6 +1182,8 @@ def get_cameras_list():
 if __name__ == '__main__':
     # Initialize database
     init_db()
+
+    print(f"=== Attendify started (threshold={Config.FACE_RECOGNITION_THRESHOLD}, faces={len(face_recognizer.face_database)}) ===")
 
     # Run Flask app
     app.run(host='0.0.0.0', port=5001, debug=Config.DEBUG)

@@ -63,49 +63,72 @@ class FaceRecognizer:
             print(f"Preprocessing warning: {str(e)}, using original image")
             return image_path
 
-    def enroll_face(self, student_id, face_image_path):
+    def enroll_face(self, student_id, face_image_path, stored_image_path=None):
         """
         Enroll a new face to the database with multiple embeddings for robustness
 
         Args:
             student_id: Student ID
-            face_image_path: Path to the face image
+            face_image_path: Path to the face image to read
+            stored_image_path: Path to record in the database, if the image will
+                live somewhere else once enrollment succeeds (defaults to face_image_path)
 
         Returns:
-            True if successful, False otherwise
+            Tuple of (success, error_message). error_message is None on success.
         """
+        recorded_path = str(stored_image_path or face_image_path)
         try:
             embeddings = []
-            
-            # Generate embedding from original image
-            embedding_objs = DeepFace.represent(
-                img_path=str(face_image_path),
-                model_name=self.model_name,
-                enforce_detection=True,
-                detector_backend='opencv'  # Faster, works with various angles
-            )
 
-            if embedding_objs:
-                embeddings.append(embedding_objs[0]["embedding"])
-            
-            # Generate embedding from preprocessed image for better lighting tolerance
+            # Generate embedding from original image
+            # Try multiple detector backends for better face detection
+            embedding_objs = None
+            working_detector = None
+            for detector in ['retinaface', 'opencv', 'ssd', 'mtcnn']:
+                try:
+                    embedding_objs = DeepFace.represent(
+                        img_path=str(face_image_path),
+                        model_name=self.model_name,
+                        enforce_detection=True,
+                        detector_backend=detector
+                    )
+                    if embedding_objs:
+                        working_detector = detector
+                        break
+                except Exception:
+                    continue
+
+            # No backend found a face. Refuse the enrollment instead of embedding
+            # the whole image, which would store a meaningless vector under this
+            # student and cause false matches during recognition.
+            if not embedding_objs:
+                print(f"Enrollment rejected for {student_id}: no face detected by any detector backend")
+                return False, ('No face detected in the photo. Use a clear, well-lit, front-facing '
+                               'image where the face fills a good part of the frame.')
+
+            embeddings.append(embedding_objs[0]["embedding"])
+
+            # Generate embedding from preprocessed image for better lighting tolerance.
+            # A face is known to be present, so keep detection enforced here too and
+            # just skip the enhanced variant if the detector misses it.
             enhanced_path = self._preprocess_image(face_image_path)
             if enhanced_path != face_image_path:
                 try:
                     enhanced_objs = DeepFace.represent(
                         img_path=enhanced_path,
                         model_name=self.model_name,
-                        enforce_detection=False,
-                        detector_backend='opencv'
+                        enforce_detection=True,
+                        detector_backend=working_detector
                     )
                     if enhanced_objs:
                         embeddings.append(enhanced_objs[0]["embedding"])
+                except Exception as e:
+                    print(f"CLAHE-enhanced embedding skipped for {student_id}: {str(e)}")
+                finally:
                     # Clean up temp file
                     if os.path.exists(enhanced_path):
                         os.remove(enhanced_path)
-                except:
-                    pass
-            
+
             if embeddings:
                 # Store multiple embeddings or average them
                 if student_id in self.face_database:
@@ -115,21 +138,21 @@ class FaceRecognizer:
                     self.face_database[student_id] = {
                         'embeddings': existing,
                         'embedding': embeddings[0],  # Keep for backward compatibility
-                        'image_path': str(face_image_path)
+                        'image_path': recorded_path
                     }
                 else:
                     self.face_database[student_id] = {
                         'embeddings': embeddings,
                         'embedding': embeddings[0],  # Primary embedding
-                        'image_path': str(face_image_path)
+                        'image_path': recorded_path
                     }
                 self.save_face_database()
-                return True
+                return True, None
 
-            return False
+            return False, 'Could not generate a face embedding from the photo.'
         except Exception as e:
             print(f"Error enrolling face: {str(e)}")
-            return False
+            return False, f"Face enrollment failed: {str(e)}"
 
     def recognize_face(self, face_image_path):
         """
@@ -143,35 +166,37 @@ class FaceRecognizer:
         """
         try:
             input_embeddings = []
-            
-            # Generate embedding for the input face (original)
-            embedding_objs = DeepFace.represent(
-                img_path=str(face_image_path),
-                model_name=self.model_name,
-                enforce_detection=False,
-                detector_backend='opencv'
-            )
 
-            if embedding_objs:
-                input_embeddings.append(np.array(embedding_objs[0]["embedding"]))
-            
-            # Try with enhanced image for better lighting tolerance
-            enhanced_path = self._preprocess_image(face_image_path)
-            if enhanced_path != face_image_path:
+            # Try multiple detector backends to find a face
+            embedding_objs = None
+            for detector in ['retinaface', 'opencv', 'ssd']:
                 try:
-                    enhanced_objs = DeepFace.represent(
-                        img_path=enhanced_path,
+                    embedding_objs = DeepFace.represent(
+                        img_path=str(face_image_path),
+                        model_name=self.model_name,
+                        enforce_detection=True,
+                        detector_backend=detector
+                    )
+                    if embedding_objs:
+                        break
+                except Exception:
+                    continue
+
+            # Last resort: no face detection enforcement
+            if not embedding_objs:
+                try:
+                    embedding_objs = DeepFace.represent(
+                        img_path=str(face_image_path),
                         model_name=self.model_name,
                         enforce_detection=False,
                         detector_backend='opencv'
                     )
-                    if enhanced_objs:
-                        input_embeddings.append(np.array(enhanced_objs[0]["embedding"]))
-                    if os.path.exists(enhanced_path):
-                        os.remove(enhanced_path)
-                except:
+                except Exception:
                     pass
-            
+
+            if embedding_objs:
+                input_embeddings.append(np.array(embedding_objs[0]["embedding"]))
+
             if not input_embeddings:
                 return None, 0
 
